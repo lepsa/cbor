@@ -1,0 +1,56 @@
+cabal-version:      3.0
+name:               Parser
+
+version:            0.1.0.0
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Owen Harvey
+maintainer:         owenlharvey@gmail.com
+category:           Text
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+
+    exposed-modules:  MyLib,
+                      Data.Cbor,
+                      Data.Cbor.Decoder,
+                      Data.Cbor.Encoder,
+                      Data.Cbor.Parser,
+                      Data.Parser
+    build-depends:
+        base,
+        bytestring,
+        text,
+        half,
+        containers
+    hs-source-dirs:   lib
+    default-language: GHC2021
+
+executable Parser
+    import:           warnings
+    main-is:          Main.hs
+    build-depends:
+        base,
+        bytestring,
+        text,
+        half,
+        Parser
+    hs-source-dirs:   exe
+    default-language: GHC2021
+
+test-suite Parser-test
+    import:           warnings
+    default-language: GHC2021
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base,
+        bytestring,
+        text,
+        Parser
