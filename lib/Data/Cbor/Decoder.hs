@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Data.Cbor.Decoder where
@@ -50,24 +49,24 @@ withTag f (CTag t a) = f (t, a)
 withTag _ a = Left $ UnexpectedValue "Expected Tag" a
 
 withFalse :: Decoder () a
-withFalse f CFalse = f ()
-withFalse _ a = Left $ UnexpectedValue "Expected False" a
+withFalse f v | v == cFalse = f ()
+              | otherwise = Left $ UnexpectedValue "Expected False" v
 
 withTrue :: Decoder () a
-withTrue f CTrue = f ()
-withTrue _ a = Left $ UnexpectedValue "Expected True" a
+withTrue f v | v == cTrue = f ()
+             | otherwise = Left $ UnexpectedValue "Expected True" v
 
 withBool :: Decoder Bool a
-withBool f CTrue = f True
-withBool f CFalse = f False
-withBool _ a = Left $ UnexpectedValue "Expected Bool" a
+withBool f v | v == cTrue = f True
+             | v == cFalse = f False
+             | otherwise = Left $ UnexpectedValue "Expected Bool" v
 
 withNull :: Decoder () a
-withNull f CNull = f ()
-withNull _ a = Left $ UnexpectedValue "Expected Null" a
+withNull f v | v == cNull = f ()
+             | otherwise = Left $ UnexpectedValue "Expected Null" v
 
 withUndefined :: Decoder () a
-withUndefined f CUndefined = f ()
+withUndefined f v | v == cUndefined = f ()
 withUndefined _ a = Left $ UnexpectedValue "Expected Undefined" a
 
 withHalf :: Decoder Half a

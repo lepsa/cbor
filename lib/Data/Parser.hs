@@ -6,6 +6,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.List.NonEmpty
 import Data.Word
+import Control.Monad
 
 class (Alternative m) => Parsing m where
   try           :: m a -> m a
@@ -27,8 +28,7 @@ newtype Parser a = Parser
   }
 
 instance Functor Parser where
-  fmap f p = Parser $ \s ->
-    fmap f <$> runParser p s
+  fmap f p = Parser $ fmap (fmap f) . runParser p
 
 instance Applicative Parser where
   pure a = Parser $ \s -> pure (s, a)
@@ -50,12 +50,11 @@ instance Monad Parser where
     runParser (f a) s'
 
 instance Parsing Parser where
-  try p =
-    Parser $
-      either
-        (const $ Left Empty)
-        pure
-        . runParser p
+  try p = Parser $
+    either
+      (const $ Left Empty)
+      pure
+      . runParser p
   skipMany p = (p *> skipMany p) <|> pure ()
   skipSome p = p *> skipMany p
   unexpected = Parser . const . Left . Unexpected
@@ -69,13 +68,13 @@ instance Parsing Parser where
       $ runParser m s
 
 choice :: (Alternative m) => [m a] -> m a
-choice = foldr (<|>) empty
+choice = asum
 
 option :: (Alternative m) => a -> m a -> m a
 option a m = m <|> pure a
 
 skipOptional :: (Alternative m) => m a -> m ()
-skipOptional m = () <$ m <|> pure ()
+skipOptional m = void m <|> pure ()
 
 between :: (Applicative m) => m bra -> m ket -> m a -> m a
 between bra ket m = bra *> m <* ket

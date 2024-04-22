@@ -40,7 +40,7 @@ encodeWord8 w = [w]
 encodeWord16 :: Word16 -> ByteString
 encodeWord16 w =
   -- Mask out the most significant byte and put it first
-  encodeWord8 (toInt $ ((shiftL b8 8) .&. w) `shiftR` 8)
+  encodeWord8 (toInt $ (shiftL b8 8 .&. w) `shiftR` 8)
     <>
     -- Mask out the least significate byte and put it last
     encodeWord8 (toInt $ b8 .&. w)
@@ -48,13 +48,13 @@ encodeWord16 w =
 -- Same idea as encodeWord16, we crack the value in half and recurse
 encodeWord32 :: Word32 -> ByteString
 encodeWord32 w =
-  encodeWord16 (toInt $ ((shiftL b16 16) .&. w) `shiftR` 16)
+  encodeWord16 (toInt $ (shiftL b16 16 .&. w) `shiftR` 16)
     <> encodeWord16 (toInt $ b16 .&. w)
 
 -- Same again, divide and conquer.
 encodeWord64 :: Word64 -> ByteString
 encodeWord64 w =
-  encodeWord32 (toInt $ ((shiftL b32 32) .&. w) `shiftR` 32)
+  encodeWord32 (toInt $ (shiftL b32 32 .&. w) `shiftR` 32)
     <> encodeWord32 (toInt $ b32 .&. w)
 
 encode :: Cbor -> Either String ByteString
@@ -65,10 +65,6 @@ encode (CText s) = pure $ encodeText s
 encode (CArray l) = encodeArray l
 encode (CMap m) = encodeMap m
 encode (CTag t c) = encodeTag t c
-encode CFalse = pure encodeFalse
-encode CTrue = pure encodeTrue
-encode CNull = pure encodeNull
-encode CUndefined = pure encodeUndefined
 encode (CHalf h) = pure $ encodeHalf h
 encode (CFloat f) = pure $ encodeFloat f
 encode (CDouble d) = pure $ encodeDouble d
@@ -89,14 +85,13 @@ encodeUnsigned w
 
 encodeNegative :: Word64 -> ByteString
 encodeNegative w
-  | w' <= 23 = [encodeType majorType $ toInt w']
-  | w' <= b8 = [encodeType majorType 24] <> encodeWord8 (toInt w')
-  | w' <= b16 = [encodeType majorType 25] <> encodeWord16 (toInt w')
-  | w' <= b32 = [encodeType majorType 26] <> encodeWord32 (toInt w')
-  | otherwise = [encodeType majorType 27] <> encodeWord64 (toInt w')
+  | w <= 23 = [encodeType majorType $ toInt w]
+  | w <= b8 = [encodeType majorType 24] <> encodeWord8 (toInt w)
+  | w <= b16 = [encodeType majorType 25] <> encodeWord16 (toInt w)
+  | w <= b32 = [encodeType majorType 26] <> encodeWord32 (toInt w)
+  | otherwise = [encodeType majorType 27] <> encodeWord64 (toInt w)
   where
     majorType = 1
-    w' = w - 1
 
 encodeByteString :: ByteString -> ByteString
 encodeByteString s
@@ -131,10 +126,7 @@ encodeArray l
   where
     go :: Either String ByteString
     go = foldr f (pure mempty) l
-    f a b = do
-      a' <- encode a
-      b' <- b
-      pure $ a' <> b'
+    f a b = (<>) <$> encode a <*> b
     majorType = 4
     len = length l
 
@@ -148,10 +140,9 @@ encodeMap m
   where
     go = mconcat . sort <$> foldr f (pure mempty) l
     f (a, b) z = do
-      a' <- encode a
-      b' <- encode b
+      a' <- (<>) <$> encode a <*> encode b
       z' <- z
-      pure $ (a' <> b') : z'
+      pure $ a' : z'
     majorType = 5
     len = length l
     l = M.toList m

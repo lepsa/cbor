@@ -6,6 +6,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.Cbor
 import Data.Cbor.Util
+import Data.Foldable
 import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Parser
@@ -95,9 +96,9 @@ cunsigned =
 
 -- The semantic value of this is -1 - value.
 -- To give the range [-2^64..-1]
--- Be careful when using this
+-- Be careful when using this as it can overflow at the max value
 cnegative :: Word8 -> Parser Word64
-cnegative = fmap (+1) . cunsigned
+cnegative = cunsigned
 
 cbytestringChunk :: Parser ByteString
 cbytestringChunk = do
@@ -109,13 +110,9 @@ cbytestringChunk = do
     (Just a) -> BS.pack <$> count (toInt a) anyByte
 
 cbytestring :: Word8 -> Parser ByteString
-cbytestring =
-  itemLength
-    >=> maybe go f
+cbytestring = itemLength >=> maybe go f
   where
-    go = do
-      l <- manyTill cbytestringChunk (try cbreak)
-      pure $ foldr (<>) mempty l
+    go = fold <$> manyTill cbytestringChunk (try cbreak)
     f l = BS.pack <$> count (toInt l) anyByte
 
 ctextChunk :: Parser Text
@@ -134,13 +131,9 @@ ctextChunk = do
           . BS.pack
 
 ctext :: Word8 -> Parser Text
-ctext =
-  itemLength
-    >=> maybe go f
+ctext = itemLength >=> maybe go f
   where
-    go = do
-      l <- manyTill ctextChunk (try cbreak)
-      pure $ foldr (<>) mempty l
+    go = fold <$> manyTill ctextChunk (try cbreak)
     f l =
       count (toInt l) anyByte
         >>= either
@@ -173,11 +166,7 @@ ctag = itemLength >=> maybe malformed go
 
 cfloating :: Word8 -> Parser Cbor
 cfloating w
-  | w <= 19 = pure $ CSimple w
-  | w == 20 = pure CFalse
-  | w == 21 = pure CTrue
-  | w == 22 = pure CNull
-  | w == 23 = pure CUndefined
+  | w <= 23 = pure $ CSimple w
   | w == 24 = csimple
   | w == 25 = CHalf . Half . CUShort <$> read16
   | w == 26 = CFloat . castWord32ToFloat <$> read32
@@ -190,5 +179,5 @@ csimple :: Parser Cbor
 csimple = anyByte >>= f
   where
     f b
-      | b <= 31 = unexpected "Found simple type with an invalid value. Major type 7, additional information 24, and a value of 31 or less."
+      | b >= 24 && b <= 31 = unexpected "Found simple type with an invalid value. Major type 7, additional information 24, and a value between 24 and 31."
       | otherwise = pure $ CSimple b
