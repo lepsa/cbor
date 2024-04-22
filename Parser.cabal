@@ -19,8 +19,10 @@ library
     exposed-modules:  MyLib,
                       Data.Cbor,
                       Data.Cbor.Decoder,
-                      Data.Cbor.Encoder,
                       Data.Cbor.Parser,
+                      Data.Cbor.Serialiser,
+                      Data.Cbor.Util,
+                      Data.Cbor.Zipper,
                       Data.Parser
     build-depends:
         base,
@@ -53,4 +55,6 @@ test-suite Parser-test
         base,
         bytestring,
         text,
-        Parser
+        Parser,
+        hedgehog,
+        half
