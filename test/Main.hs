@@ -19,6 +19,7 @@ import Data.Cbor.Tags
 import Data.Cbor.Util
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text.Lazy as TL
+import qualified Data.List as L
 
 genCBOR :: Gen Cbor
 genCBOR = Gen.sized $ \size -> do
@@ -57,7 +58,7 @@ instance Show Hex where
         in if length s < 2 then '0' : s else s
 
 fromHex :: String -> ByteString
-fromHex s = pack $ fst . head . readHex <$> pairs s
+fromHex s = pack $ fmap fst . L.uncons . readHex <$> pairs s
   where
     pairs [] = []
     pairs (a:b:s') = [a,b] : pairs s'

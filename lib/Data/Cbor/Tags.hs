@@ -191,7 +191,17 @@ fromBase64 _ = Nothing
 toBase64 :: ByteString -> Cbor
 toBase64 = CTag 34 . CText . T.decodeUtf8 . B64.encode
 
--- fromMIME :: Cbor -> Maybe MIME
--- fromMIME (CTag 36 _) = _
--- fromRegex :: Cbor -> Maybe Regex
--- fromRegex (CTag 35 _) = _
+fromMIME :: Cbor -> Maybe Text
+fromMIME (CTag 36 c) =
+  decodedToMaybe (withText pure c) <|> decodedToMaybe (withTextStreaming (pure . TL.toStrict) c)
+fromMIME _ = Nothing
+
+toMIME :: Text -> Cbor
+toMIME = CTag 36 . CText
+
+fromSelfDescribing :: Cbor -> Maybe Cbor
+fromSelfDescribing (CTag 55799 c) = pure c
+fromSelfDescribing _ = Nothing
+
+toSelfDescribing :: Cbor -> Cbor
+toSelfDescribing = CTag 55799
