@@ -107,3 +107,6 @@ fromDecimalFrac (CTag 5 (CArray [e, m])) = do
   m' <- decodedToMaybe (withInteger pure m) <|> fromBigNum m
   pure $ fromIntegral m' * (2 ^ e')
 fromDecimalFrac _ = Nothing
+
+-- toDecimalFrac :: Rational -> Cbor
+-- toDecimalFrac = _

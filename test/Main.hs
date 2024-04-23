@@ -17,6 +17,8 @@ import Numeric.Half
 import Data.Cbor.Decoder
 import Data.Cbor.Tags
 import Data.Cbor.Util
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text.Lazy as TL
 
 genCBOR :: Gen Cbor
 genCBOR = Gen.sized $ \size -> do
@@ -26,7 +28,9 @@ genCBOR = Gen.sized $ \size -> do
     [ CUnsigned <$> Gen.integral bounded
     , CNegative <$> Gen.integral bounded
     , CByteString <$> Gen.bytes collectionSize
+    , CByteStringLazy . BL.fromStrict <$> Gen.bytes collectionSize
     , CText <$> Gen.text collectionSize Gen.unicode
+    , CTextLazy . TL.fromStrict <$> Gen.text collectionSize Gen.unicode
     , CArray <$> Gen.list collectionSize smallerCBOR
     , CMap <$> Gen.map collectionSize ((,) <$> smallerCBOR <*> smallerCBOR)
     , CTag <$> Gen.integral bounded <*> smallerCBOR
@@ -161,8 +165,8 @@ rfcTestStrings = (\(a, b, c, d) -> (a, fromHex b, c, d)) <$>
   , (CMap [(CText "a", CUnsigned 1), (CText "b", CArray [CUnsigned 2, CUnsigned 3])], "a26161016162820203", Nothing, Nothing)
   , (CArray [CText "a", CMap [(CText "b", CText "c")]] , "826161a161626163", Nothing, Nothing)
   , (CMap [(CText "a", CText "A"), (CText "b", CText "B"), (CText "c", CText "C"), (CText "d", CText "D"), (CText "e", CText "E")], "a56161614161626142616361436164614461656145", Nothing, Nothing)
-  , (CByteString $ fromHex "0102030405", "5f42010243030405ff", Nothing, Nothing)
-  , (CText "streaming", "7f657374726561646d696e67ff", Nothing, Nothing)
+  , (CByteStringLazy $ BL.fromStrict $ fromHex "0102030405", "5f42010243030405ff", Nothing, Nothing)
+  , (CTextLazy "streaming", "7f657374726561646d696e67ff", Nothing, Nothing)
   , (CArray [], "9fff", Nothing, Nothing)
   , (CArray [CUnsigned 1, CArray [CUnsigned 2, CUnsigned 3], CArray [CUnsigned 4, CUnsigned 5]], "9f018202039f0405ffff", Nothing, Nothing)
   , (CArray [CUnsigned 1, CArray [CUnsigned 2, CUnsigned 3], CArray [CUnsigned 4, CUnsigned 5]], "9f01820203820405ff", Nothing, Nothing)

@@ -9,7 +9,6 @@ import Data.Cbor
 import Data.Cbor.Util
 import Data.Coerce
 import Data.Functor
-import Data.List (sort)
 import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Text (Text)
@@ -19,6 +18,9 @@ import Foreign.C.Types (CUShort (..))
 import GHC.Float (castDoubleToWord64, castFloatToWord32)
 import Numeric.Half
 import Prelude hiding (encodeFloat)
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text.Lazy as TL
 
 b8 :: (Num a) => a
 b8 = 0xFF
@@ -61,7 +63,9 @@ encode :: Cbor -> Either String ByteString
 encode (CUnsigned w) = pure $ encodeUnsigned w
 encode (CNegative w) = pure $ encodeNegative w
 encode (CByteString s) = pure $ encodeByteString s
+encode (CByteStringLazy s) = pure $ encodeByteStringStream s
 encode (CText s) = pure $ encodeText s
+encode (CTextLazy s) = pure $ encodeTextStream s
 encode (CArray l) = encodeArray l
 encode (CMap m) = encodeMap m
 encode (CTag t c) = encodeTag t c
@@ -104,8 +108,11 @@ encodeByteString s
     majorType = 2
     len = BS.length s
 
--- encodeByteStringStream :: ByteString -> ByteString
--- encodeByteStringStream = _
+encodeByteStringStream :: BL.ByteString -> ByteString
+encodeByteStringStream s =
+  B.cons (encodeType majorType 31) $ BL.foldrChunks (\s' z -> encodeByteString s' <> z) [cbreakByte] s
+  where
+    majorType = 2
 
 encodeText :: Text -> ByteString
 encodeText t
@@ -119,8 +126,11 @@ encodeText t
     s = encodeUtf8 t
     len = BS.length s
 
--- encodeTextStream :: Text -> ByteString
--- encodeTextStream = _
+encodeTextStream :: TL.Text -> ByteString
+encodeTextStream t =
+  B.cons (encodeType majorType 31) $ TL.foldrChunks (\t' z -> encodeText t' <> z) [cbreakByte] t
+  where
+    majorType = 3
 
 encodeArray :: [Cbor] -> Either String ByteString
 encodeArray l
@@ -136,8 +146,12 @@ encodeArray l
     majorType = 4
     len = length l
 
--- encodeArrayStream :: [Cbor] -> Either String ByteString
--- encodeArrayStream = _
+encodeArrayStream :: [Cbor] -> Either String ByteString
+encodeArrayStream l = B.cons (encodeType majorType 31) <$> go
+  where
+    majorType = 4
+    go = foldr f (pure [cbreakByte]) l
+    f a b = (<>) <$> encode a <*> b
 
 encodeMap :: Map Cbor Cbor -> Either String ByteString
 encodeMap m
@@ -147,17 +161,25 @@ encodeMap m
   | len <= b32 = go <&> \s -> [encodeType majorType 26] <> encodeWord32 (toInt len) <> s
   | otherwise = go <&> \s -> [encodeType majorType 27] <> encodeWord64 (toInt len) <> s
   where
-    go = mconcat . sort <$> foldr f (pure mempty) l
+    go = foldr f (pure mempty) l
     f (a, b) z = do
       a' <- (<>) <$> encode a <*> encode b
       z' <- z
-      pure $ a' : z'
+      pure $ a' <> z'
     majorType = 5
     len = length l
     l = M.toList m
 
--- encodeMapStream :: Map Cbor Cbor -> ByteString
--- encodeMapStream = _
+encodeMapStream :: Map Cbor Cbor -> Either String ByteString
+encodeMapStream m = B.cons (encodeType majorType 31) <$> go
+  where
+    majorType = 5
+    l = M.toList m
+    go = foldr f (pure [cbreakByte]) l
+    f (a, b) z = do
+      a' <- (<>) <$> encode a <*> encode b
+      z' <- z
+      pure $ a' <> z'
 
 encodeTag :: Word64 -> Cbor -> Either String ByteString
 encodeTag t c
@@ -212,8 +234,7 @@ encodeDouble d =
     majorType = 7
 
 -- This does allow encoding of Bools, null, and undefined
--- But users should probably use the stricter types for those
--- as it will not round-trip parse to the same structure.
+-- But users should probably use the stricter values for those.
 encodeSimple :: Word8 -> Either String ByteString
 encodeSimple w
   | w >= 32 = pure $ [encodeType majorType 24] <> encodeWord8 w

@@ -6,7 +6,6 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.Cbor
 import Data.Cbor.Util
-import Data.Foldable
 import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Parser
@@ -16,6 +15,8 @@ import Data.Word
 import Foreign.C.Types (CUShort (..))
 import GHC.Float
 import Numeric.Half
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text.Lazy as TL
 
 reserved :: Parser a
 reserved = Parser $ \_ -> Left $ Unexpected "reserved"
@@ -40,7 +41,7 @@ packType (mt, eb) = mt' .|. eb'
     eb' = eb .&. minorBits
 
 cbreak :: Parser ()
-cbreak = void $ byte 0b111_11111
+cbreak = void $ byte cbreakByte
 
 cbor :: Parser Cbor
 cbor = do
@@ -48,8 +49,8 @@ cbor = do
   case mt of
     0 -> CUnsigned <$> cunsigned sc
     1 -> CNegative <$> cnegative sc
-    2 -> CByteString <$> cbytestring sc
-    3 -> CText <$> ctext sc
+    2 -> cbytestring sc
+    3 -> ctext sc
     4 -> CArray <$> carray sc
     5 -> CMap <$> cmap sc
     6 -> uncurry CTag <$> ctag sc
@@ -84,7 +85,8 @@ itemLength w
   | w == 25 = pure . toInt <$> read16
   | w == 26 = pure . toInt <$> read32
   | w == 27 = pure <$> read64
-  | w <= 31 = pure Nothing
+  | w <= 30 = reserved
+  | w == 31 = pure Nothing
   | otherwise = bitError
 
 cunsigned :: Word8 -> Parser Word64
@@ -109,11 +111,11 @@ cbytestringChunk = do
     Nothing -> malformed
     (Just a) -> BS.pack <$> count (toInt a) anyByte
 
-cbytestring :: Word8 -> Parser ByteString
+cbytestring :: Word8 -> Parser Cbor
 cbytestring = itemLength >=> maybe go f
   where
-    go = fold <$> manyTill cbytestringChunk (try cbreak)
-    f l = BS.pack <$> count (toInt l) anyByte
+    go = CByteStringLazy . BL.fromChunks <$> manyTill cbytestringChunk (try cbreak)
+    f l = CByteString . BS.pack <$> count (toInt l) anyByte
 
 ctextChunk :: Parser Text
 ctextChunk = do
@@ -130,15 +132,15 @@ ctextChunk = do
           . decodeUtf8'
           . BS.pack
 
-ctext :: Word8 -> Parser Text
+ctext :: Word8 -> Parser Cbor
 ctext = itemLength >=> maybe go f
   where
-    go = fold <$> manyTill ctextChunk (try cbreak)
+    go = CTextLazy . TL.fromChunks <$> manyTill ctextChunk (try cbreak)
     f l =
       count (toInt l) anyByte
         >>= either
           (unexpected . show)
-          pure
+          (pure . CText)
           . decodeUtf8'
           . BS.pack
 

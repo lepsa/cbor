@@ -11,6 +11,8 @@ import Data.ByteString
 import Data.Map
 import Data.Text
 import Data.Cbor.Util
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.Text.Lazy as TL
 
 -- Semantic names for simple values
 cFalse, cTrue, cNull, cUndefined :: Cbor
@@ -49,9 +51,17 @@ withByteString :: Decoder ByteString a
 withByteString f (CByteString a) = f a
 withByteString _ a = Left $ UnexpectedValue "Expected ByteString" a
 
+withByteStringStreaming :: Decoder BL.ByteString a
+withByteStringStreaming f (CByteStringLazy a) = f a
+withByteStringStreaming _ a = Left $ UnexpectedValue "Expected Streaming ByteString" a
+
 withText :: Decoder Text a
 withText f (CText a) = f a
 withText _ a = Left $ UnexpectedValue "Expected Text" a
+
+withTextStreaming :: Decoder TL.Text a
+withTextStreaming f (CTextLazy a) = f a
+withTextStreaming _ a = Left $ UnexpectedValue "Expected Streaming Text" a
 
 withArray :: Decoder [Cbor] a
 withArray f (CArray a) = f a

@@ -7,6 +7,9 @@ majorBits = 0b11100000
 minorBits :: Word8
 minorBits = 0b00011111
 
+cbreakByte :: Word8
+cbreakByte = 0b111_11111
+
 toInt :: (Integral a, Num b) => a -> b
 toInt = fromInteger . toInteger
 
