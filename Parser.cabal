@@ -55,6 +55,9 @@ test-suite Parser-test
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Main.hs
+    other-modules:    Test.Data
+                      Test.Util
+                      Test.Roundtrip
     build-depends:
         base,
         bytestring,
@@ -63,4 +66,5 @@ test-suite Parser-test
         hedgehog,
         half,
         ieee754,
-        containers
+        containers,
+        time

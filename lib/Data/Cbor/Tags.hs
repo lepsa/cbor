@@ -12,7 +12,6 @@ import Data.Time.Format.ISO8601
 import Control.Applicative
 import Data.Time.Clock.System (systemToUTCTime, SystemTime (..), utcToSystemTime)
 import Data.Cbor.Decoder
-import Data.Word
 import Data.Ratio
 import Data.Cbor.Util
 import Data.Parser
@@ -51,21 +50,16 @@ toUnixEpoch (CTag 1 c) = do
   pure $ addUTCTime diff $ systemToUTCTime $ MkSystemTime 0 0
 toUnixEpoch _ = Nothing
 
-fromUnixEpoch :: Either ZonedTime UTCTime -> Maybe Cbor
-fromUnixEpoch e =
-  let t = utcToSystemTime $ either zonedTimeToUTC id e
+fromUnixEpoch :: UTCTime -> Maybe Cbor
+fromUnixEpoch u =
+  let t = utcToSystemTime u
       secs = systemSeconds t
       nSecs = systemNanoseconds t
   in if nSecs == 0
   then -- We can use a simple integer count
     CTag 1 <$>
       if secs >= 0
-      then
-        let pos = fromIntegral secs
-        -- Bounds check the our time diff can fit in 64 bits
-        in if pos > fromIntegral (maxBound @Word64)
-           then Nothing
-           else pure $ CUnsigned pos
+      then pure $ CUnsigned $ fromIntegral secs
       else CNegative <$> toNegative (fromIntegral secs)
   else -- We have to use a fractional value
     pure $ CTag 1 $ CDouble $
@@ -87,24 +81,24 @@ fromNetworkOrder = go 0
       Nothing -> i
       Just (b, bs') -> go (fromIntegral b + (i * 256)) bs'
 
+toNetworkOrder :: Natural -> ByteString
+toNetworkOrder = go []
+  where
+    go :: ByteString -> Natural -> ByteString
+    go bs 0 = bs
+    go bs x =
+      let w = rem x 256
+      in go (B.cons (fromIntegral w) bs) (div x 256)
+
 fromBigNum :: Cbor -> Maybe Integer
 fromBigNum (CTag 2 (CByteString b)) = pure $ fromIntegral $ fromNetworkOrder b -- Positive bignums
-fromBigNum (CTag 3 (CByteString b)) = pure $ negate (fromIntegral $ fromNetworkOrder b) - 1 -- Negative bignums
+fromBigNum (CTag 3 (CByteString b)) = pure $ negate (fromIntegral (fromNetworkOrder b)) - 1 -- Negative bignums
 fromBigNum _ = Nothing
 
 toBigNum :: Integer -> Maybe Cbor
-toBigNum n | n >= bounds64Bit = pure $ CTag 2 $ CByteString $ toNetworkOrder $ fromIntegral n
-           | n <= -bounds64Bit = pure $ CTag 3 $ CByteString $ toNetworkOrder $ fromIntegral $ negate n
+toBigNum n | n >=  bounds64Bit = pure . CTag 2 . CByteString . toNetworkOrder $ fromIntegral n
+           | n <= -bounds64Bit = pure . CTag 3 . CByteString . toNetworkOrder $ fromIntegral $ negate $ n + 1
            | otherwise = Nothing
-  where
-    toNetworkOrder :: Natural -> ByteString
-    toNetworkOrder = go []
-      where
-        go :: ByteString -> Natural -> ByteString
-        go bs 0 = bs
-        go bs x =
-          let w = rem n 256
-          in go (B.cons (fromIntegral w) bs) (div x 256)
 
 -- Section 3.4.4 Decimal fractions and big floats
 fromDecimalFrac :: Cbor -> Maybe Rational
