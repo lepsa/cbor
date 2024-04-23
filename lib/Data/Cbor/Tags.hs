@@ -15,6 +15,16 @@ import Data.Cbor.Decoder
 import Data.Word
 import Data.Ratio
 import Data.Cbor.Util
+import Data.Parser
+import Data.Cbor.Parser
+import Data.Cbor.Serialiser (encode)
+import qualified Data.Text.Lazy as TL
+import Text.URI
+import Data.Text (Text)
+import qualified Data.ByteString.Base64.URL as B64U
+import Data.Text.Encoding (encodeUtf8)
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.Text.Encoding as T
 
 --
 -- RFC8949 Section 3.4
@@ -102,11 +112,86 @@ fromDecimalFrac (CTag 4 (CArray [e, m])) = do
   e' <- decodedToMaybe $ withInteger pure e
   m' <- decodedToMaybe (withInteger pure m) <|> fromBigNum m
   pure $ fromIntegral m' * (10 ^ e')
-fromDecimalFrac (CTag 5 (CArray [e, m])) = do
+fromDecimalFrac _ = Nothing
+
+fromBigFloat :: Cbor -> Maybe Rational
+fromBigFloat (CTag 5 (CArray [e, m])) = do
   e' <- decodedToMaybe $ withInteger pure e
   m' <- decodedToMaybe (withInteger pure m) <|> fromBigNum m
   pure $ fromIntegral m' * (2 ^ e')
-fromDecimalFrac _ = Nothing
+fromBigFloat _ = Nothing
 
+-- TODO
 -- toDecimalFrac :: Rational -> Cbor
 -- toDecimalFrac = _
+--
+-- toBigFloat :: Rational -> Cbor
+-- toBigFloat = _
+
+-- Section 3.4.5 Content Hints
+
+-- Encoded CBOR
+fromEncodedCbor :: Cbor -> Maybe Cbor
+fromEncodedCbor (CTag 24 c) =
+  let f = either (Left . Error . show) (pure . snd) . runParser cbor
+  in decodedToMaybe (withByteString f c)
+    <|> decodedToMaybe (withByteStringStreaming (f . B.toStrict) c)
+fromEncodedCbor _ = Nothing
+
+toEncodedCbor :: Cbor -> Maybe Cbor
+toEncodedCbor = either (const Nothing) (pure . CTag 24 . CByteString) . encode
+
+-- Expected later encodings
+fromExpectedBase64Url :: Cbor -> Maybe Cbor
+fromExpectedBase64Url (CTag 21 c) = pure c
+fromExpectedBase64Url _ = Nothing
+
+fromExpectedBase64 :: Cbor -> Maybe Cbor
+fromExpectedBase64 (CTag 22 c) = pure c
+fromExpectedBase64 _ = Nothing
+
+fromExpectedBase16 :: Cbor -> Maybe Cbor
+fromExpectedBase16 (CTag 23 c) = pure c
+fromExpectedBase16 _ = Nothing
+
+toExpectedBase64Url :: Cbor -> Cbor
+toExpectedBase64Url = CTag 21
+
+toExpectedBase64 :: Cbor -> Cbor
+toExpectedBase64 = CTag 22
+
+toExpectedBase16 :: Cbor -> Cbor
+toExpectedBase16 = CTag 23
+
+-- Encoded Text
+fromEncodedURI :: Cbor -> Maybe URI
+fromEncodedURI (CTag 32 c) =
+  let f = maybe (Left $ Error "Could not parse URI") pure . mkURI
+  in decodedToMaybe (withText f c) <|> decodedToMaybe (withTextStreaming (f . TL.toStrict) c)
+fromEncodedURI _ = Nothing
+
+toEncodedURI :: URI -> Cbor
+toEncodedURI = CTag 32 . CText . T.pack . renderStr
+
+fromBase64Url :: Cbor -> Maybe ByteString
+fromBase64Url (CTag 33 c) =
+  let f = either (Left . Error) pure . B64U.decode . encodeUtf8
+  in decodedToMaybe (withText f c) <|> decodedToMaybe (withTextStreaming (f . TL.toStrict) c)
+fromBase64Url _ = Nothing
+
+toBase64Url :: ByteString -> Cbor
+toBase64Url = CTag 33 . CText . T.decodeUtf8 . B64U.encode
+
+fromBase64 :: Cbor -> Maybe ByteString
+fromBase64 (CTag 34 c) =
+  let f = either (Left . Error) pure . B64.decode . encodeUtf8
+  in decodedToMaybe (withText f c) <|> decodedToMaybe (withTextStreaming (f . TL.toStrict) c)
+fromBase64 _ = Nothing
+
+toBase64 :: ByteString -> Cbor
+toBase64 = CTag 34 . CText . T.decodeUtf8 . B64.encode
+
+-- fromMIME :: Cbor -> Maybe MIME
+-- fromMIME (CTag 36 _) = _
+-- fromRegex :: Cbor -> Maybe Regex
+-- fromRegex (CTag 35 _) = _

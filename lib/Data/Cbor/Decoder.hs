@@ -24,6 +24,7 @@ cUndefined = CSimple 23
 data DecodeError
   = UnexpectedValue String Cbor
   | NotFound Cbor
+  | Error String
   | Empty
   deriving (Eq, Ord, Show)
 

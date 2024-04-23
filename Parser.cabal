@@ -16,8 +16,7 @@ common warnings
 library
     import:           warnings
 
-    exposed-modules:  MyLib,
-                      Data.Cbor,
+    exposed-modules:  Data.Cbor,
                       Data.Cbor.Tags,
                       Data.Cbor.Decoder,
                       Data.Cbor.Parser,
@@ -31,7 +30,10 @@ library
         text,
         half,
         containers,
-        time
+        time,
+        modern-uri,
+        base64-bytestring
+
     hs-source-dirs:   lib
     default-language: GHC2021
 
