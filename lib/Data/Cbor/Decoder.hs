@@ -2,23 +2,35 @@
 
 module Data.Cbor.Decoder where
 
-import Data.ByteString (ByteString)
 import Data.Cbor
-import Data.Map (Map)
-import Data.Text (Text)
 import Data.Word
 import GHC.Float
 import Numeric.Half
 import Data.Map qualified as M
+import Data.ByteString
+import Data.Map
+import Data.Text
+import Data.Cbor.Util
+
+-- Semantic names for simple values
+cFalse, cTrue, cNull, cUndefined :: Cbor
+cFalse = CSimple 20
+cTrue = CSimple 21
+cNull = CSimple 22
+cUndefined = CSimple 23
 
 data DecodeError
   = UnexpectedValue String Cbor
   | NotFound Cbor
+  | Empty
   deriving (Eq, Ord, Show)
 
 type Decoded a = Either DecodeError a
 
 type Decoder i a = (i -> Decoded a) -> Cbor -> Decoded a
+
+decodedToMaybe :: Decoded a -> Maybe a
+decodedToMaybe = either (const Nothing) pure
 
 withUnsigned :: Decoder Word64 a
 withUnsigned f (CUnsigned a) = f a
@@ -27,6 +39,11 @@ withUnsigned _ a = Left $ UnexpectedValue "Expected Unsigned" a
 withNegative :: Decoder Word64 a
 withNegative f (CNegative a) = f a
 withNegative _ a = Left $ UnexpectedValue "Expected Negative" a
+
+withInteger :: Decoder Integer a
+withInteger f (CUnsigned a) = f $ fromIntegral a
+withInteger f (CNegative a) = f $ fromNegative a
+withInteger _ a = Left $ UnexpectedValue "Expected Unsigned or Negative" a
 
 withByteString :: Decoder ByteString a
 withByteString f (CByteString a) = f a
@@ -40,7 +57,7 @@ withArray :: Decoder [Cbor] a
 withArray f (CArray a) = f a
 withArray _ a = Left $ UnexpectedValue "Expected Array" a
 
-withMap :: Decoder (Map Cbor Cbor) a
+withMap :: Decoder (Map Cbor Cbor) af
 withMap f (CMap a) = f a
 withMap _ a = Left $ UnexpectedValue "Expected Map" a
 
@@ -92,3 +109,13 @@ m .: k = maybe (Left $ NotFound k) pure $ M.lookup k m
 
 (.:?) :: Map Cbor Cbor -> Cbor -> Decoded (Maybe Cbor)
 m .:? k = pure $ M.lookup k m
+
+-- Mapping to and from the Word64 that represents the CBOR encoding of the negative value.
+-- With BigNums we can always go from the Word64 to an Integer, but going from Integer to Word64 may
+-- fail if the value isn't negative, or is outside of the expected bounds.
+fromNegative :: Word64 -> Integer
+fromNegative w = negate (fromIntegral w) - 1
+
+toNegative :: Integer -> Maybe Word64
+toNegative i | -1 >= i && i >= -bounds64Bit = pure $ fromInteger $ abs $ i + 1
+             | otherwise = Nothing

@@ -9,3 +9,6 @@ minorBits = 0b00011111
 
 toInt :: (Integral a, Num b) => a -> b
 toInt = fromInteger . toInteger
+
+bounds64Bit :: Integer
+bounds64Bit = 2 ^ (64 :: Integer)

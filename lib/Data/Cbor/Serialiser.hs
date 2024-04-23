@@ -104,6 +104,9 @@ encodeByteString s
     majorType = 2
     len = BS.length s
 
+-- encodeByteStringStream :: ByteString -> ByteString
+-- encodeByteStringStream = _
+
 encodeText :: Text -> ByteString
 encodeText t
   | len <= 23 = [encodeType majorType $ toInt len] <> s
@@ -115,6 +118,9 @@ encodeText t
     majorType = 3
     s = encodeUtf8 t
     len = BS.length s
+
+-- encodeTextStream :: Text -> ByteString
+-- encodeTextStream = _
 
 encodeArray :: [Cbor] -> Either String ByteString
 encodeArray l
@@ -129,6 +135,9 @@ encodeArray l
     f a b = (<>) <$> encode a <*> b
     majorType = 4
     len = length l
+
+-- encodeArrayStream :: [Cbor] -> Either String ByteString
+-- encodeArrayStream = _
 
 encodeMap :: Map Cbor Cbor -> Either String ByteString
 encodeMap m
@@ -146,6 +155,9 @@ encodeMap m
     majorType = 5
     len = length l
     l = M.toList m
+
+-- encodeMapStream :: Map Cbor Cbor -> ByteString
+-- encodeMapStream = _
 
 encodeTag :: Word64 -> Cbor -> Either String ByteString
 encodeTag t c

@@ -14,7 +14,9 @@ import Data.ByteString (ByteString, unpack, pack)
 import Numeric
 import qualified Numeric.IEEE as IEEE
 import Numeric.Half
-import GHC.Arr (Array(Array))
+import Data.Cbor.Decoder
+import Data.Cbor.Tags
+import Data.Cbor.Util
 
 genCBOR :: Gen Cbor
 genCBOR = Gen.sized $ \size -> do
@@ -83,12 +85,12 @@ prop_negativeMappingBoundry = property $ do
   else toNegative v === Nothing
   where
     neg2_64 :: Integer
-    neg2_64 = -2^64
+    neg2_64 = -bounds64Bit
 
 -- Test values from RFC8949, Appendix A
 -- The format of the list is the CBOR value, the hex string, the expected bignum value, the expected negative value
-testStrings :: [(Cbor, ByteString, Maybe Integer, Maybe Integer)]
-testStrings = (\(a, b, c, d) -> (a, fromHex b, c, d)) <$>
+rfcTestStrings :: [(Cbor, ByteString, Maybe Integer, Maybe Integer)]
+rfcTestStrings = (\(a, b, c, d) -> (a, fromHex b, c, d)) <$>
   [ (CUnsigned 0, "00", Nothing, Nothing)
   , (CUnsigned 1, "01", Nothing, Nothing)
   , (CUnsigned 10, "0a", Nothing, Nothing)
@@ -193,9 +195,10 @@ testNaNs c s = case c of
       _ -> failure
     else checkCBOR c s
   _ -> checkCBOR c s
-prop_testStrings :: Property
-prop_testStrings = withTests 1000 . property $ do
-  (c, s, bignum, negative) <- forAll $ Gen.choice $ pure <$> testStrings
+
+prop_rfcTestStrings :: Property
+prop_rfcTestStrings = withTests 1000 . property $ do
+  (c, s, bignum, negative) <- forAll $ Gen.choice $ pure <$> rfcTestStrings
   annotate $ "Supplied hex: " <> show (Hex s)
   annotate $ "Encoded hex : " <> either id (show . Hex) (encode c)
   testNaNs c s
@@ -210,5 +213,5 @@ main = checkParallel $
   [ ("CBOR", prop_roundtrip)
   , ("Negative mapping", prop_negativeMapping)
   , ("Negative mapping boundry", prop_negativeMappingBoundry)
-  , ("Test strings", prop_testStrings)
+  , ("RFC test strings", prop_rfcTestStrings)
   ]

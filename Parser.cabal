@@ -18,6 +18,7 @@ library
 
     exposed-modules:  MyLib,
                       Data.Cbor,
+                      Data.Cbor.Tags,
                       Data.Cbor.Decoder,
                       Data.Cbor.Parser,
                       Data.Cbor.Serialiser,
@@ -29,7 +30,8 @@ library
         bytestring,
         text,
         half,
-        containers
+        containers,
+        time
     hs-source-dirs:   lib
     default-language: GHC2021
 
