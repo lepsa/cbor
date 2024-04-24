@@ -4,19 +4,19 @@ import Control.Monad
 import Data.Bits
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as BL
 import Data.Cbor
 import Data.Cbor.Util
 import Data.Map (Map)
 import Data.Map qualified as M
 import Data.Parser
 import Data.Text (Text)
-import Data.Text.Encoding (decodeUtf8')
+import Data.Text.Encoding
+import Data.Text.Lazy qualified as TL
 import Data.Word
 import Foreign.C.Types (CUShort (..))
 import GHC.Float
 import Numeric.Half
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.Text.Lazy as TL
 
 reserved :: Parser a
 reserved = Parser $ \_ -> Left $ Unexpected "reserved"

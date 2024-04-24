@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Test.Roundtrip where
 
 import Data.ByteString.Lazy qualified as BL
@@ -16,6 +18,15 @@ import Hedgehog.Range qualified as Range
 import Test.Util
 import Data.Word
 import Data.Cbor.Util
+import Text.URI
+
+genText :: Gen Cbor
+genText = Gen.sized $ \size -> do
+  let collectionSize = Range.linear 0 $ unSize size
+  Gen.choice
+    [ CText <$> Gen.text collectionSize Gen.unicode,
+      CTextLazy . TL.fromStrict <$> Gen.text collectionSize Gen.unicode
+    ]
 
 genCBOR :: Gen Cbor
 genCBOR = Gen.sized $ \size -> do
@@ -26,8 +37,7 @@ genCBOR = Gen.sized $ \size -> do
       CNegative <$> Gen.integral bounded,
       CByteString <$> Gen.bytes collectionSize,
       CByteStringLazy . BL.fromStrict <$> Gen.bytes collectionSize,
-      CText <$> Gen.text collectionSize Gen.unicode,
-      CTextLazy . TL.fromStrict <$> Gen.text collectionSize Gen.unicode,
+      genText,
       CArray <$> Gen.list collectionSize smallerCBOR,
       CMap <$> Gen.map collectionSize ((,) <$> smallerCBOR <*> smallerCBOR),
       CTag <$> Gen.integral bounded <*> smallerCBOR,
@@ -83,19 +93,35 @@ prop_dateTime = withTests 1000 . property $ do
     fromDateTime' = fromDateTime . either (Left . unZonedTimeEq) Right
     toDateTime' = fmap (either (Left . ZonedTimeEq) Right) . toDateTime
 
+newtype UTCTimeEpsilon = UTCTimeEpsilon
+  { unUTCTimeEp :: UTCTime
+  }
+  deriving (Ord, Show)
+instance Eq UTCTimeEpsilon where
+  UTCTimeEpsilon a == UTCTimeEpsilon b =
+    let aNeg = addUTCTime (-epsilon) a
+        aPos = addUTCTime epsilon a
+    in aNeg <= b && b <= aPos
+    where
+      epsilon = 000000000001
+
 prop_unixEpoch :: Property
 prop_unixEpoch = withTests 1000 . property $ do
-  unixTime <- forAll $ Gen.integral $ Range.linear 0 (fromIntegral $ maxBound @Word32)
-  let time = systemToUTCTime $ MkSystemTime unixTime 0
+  let epoch = systemToUTCTime $ MkSystemTime 0 0
+  d <- forAll $ Gen.choice
+    [ Left <$> Gen.integral @_ @Integer (Range.linear 0 (fromIntegral $ maxBound @Word32))
+    , Right <$> Gen.double (Range.exponentialFloatFrom 0 (fromIntegral $ minBound @Word32) (fromIntegral $ maxBound @Word32))
+    ]
+  let difftime = either fromIntegral realToFrac d
+      time = UTCTimeEpsilon $ addUTCTime difftime epoch 
   tripping (pure time) fromUnixEpoch' toUnixEpoch'
-  pure ()
   where
-    fromUnixEpoch' :: Maybe UTCTime -> Maybe Cbor
+    fromUnixEpoch' :: Maybe UTCTimeEpsilon -> Maybe Cbor
     fromUnixEpoch' Nothing = Nothing
-    fromUnixEpoch' (Just t) = fromUnixEpoch t
-    toUnixEpoch' :: Maybe Cbor -> Maybe (Maybe UTCTime)
+    fromUnixEpoch' (Just t) = fromUnixEpoch $ unUTCTimeEp t
+    toUnixEpoch' :: Maybe Cbor -> Maybe (Maybe UTCTimeEpsilon)
     toUnixEpoch' Nothing = Nothing
-    toUnixEpoch' (Just c) = pure $ toUnixEpoch c
+    toUnixEpoch' (Just c) = pure $ UTCTimeEpsilon <$> toUnixEpoch c
 
 prop_bigNum :: Property
 prop_bigNum = withTests 1000 . property $ do
@@ -111,3 +137,54 @@ prop_bigNum = withTests 1000 . property $ do
     fromBigNum' :: Maybe HexCbor -> Maybe (Maybe Integer)
     fromBigNum' Nothing = Nothing
     fromBigNum' (Just n) = pure $ fromBigNum $ unHexCbor n
+
+-- TODO
+-- prop_bigFrac :: Property
+-- prop_bigFrac = withTests 1000 . property $ do
+--   r <- forAll $ Gen.integral $ Range.linear _ _
+
+prop_encodedCbor :: Property
+prop_encodedCbor = withTests 1000 . property $ do
+  c <- CTag 24 <$> forAll genCBOR
+  tripping (pure c) toEncodedCbor' fromEncodedCbor'
+  where
+    toEncodedCbor' :: Maybe Cbor -> Maybe HexCbor
+    toEncodedCbor' Nothing = Nothing
+    toEncodedCbor' (Just c) = HexCbor <$> toEncodedCbor c
+    fromEncodedCbor' :: Maybe HexCbor -> Maybe (Maybe Cbor)
+    fromEncodedCbor' Nothing = Nothing
+    fromEncodedCbor' (Just c) = pure $ fromEncodedCbor $ unHexCbor c
+
+prop_expectedBase64Url :: Property
+prop_expectedBase64Url = withTests 1000 . property $ do
+  c <- CTag 21 <$> forAll genCBOR
+  tripping c toExpectedBase64Url fromExpectedBase64Url
+
+prop_expectedBase64 :: Property
+prop_expectedBase64 = withTests 1000 . property $ do
+  c <- CTag 22 <$> forAll genCBOR
+  tripping c toExpectedBase64 fromExpectedBase64
+
+prop_expectedBase16 :: Property
+prop_expectedBase16 = withTests 1000 . property $ do
+  c <- CTag 23 <$> forAll genCBOR
+  tripping c toExpectedBase16 fromExpectedBase16
+
+prop_encodedURI :: Property
+prop_encodedURI = withTests 1000 . property $ do
+  u <- forAll $ Gen.choice
+    -- Example URIs from https://en.wikipedia.org/wiki/Uniform_Resource_Identifier
+    [ Gen.mapMaybe mkURI $ pure "https://john.doe@www.example.com:123/forum/questions/?tag=networking&order=newest#top"
+    , Gen.mapMaybe mkURI $ pure "ldap://[2001:db8::7]/c=GB?objectClass?one"
+    , Gen.mapMaybe mkURI $ pure "mailto:John.Doe@example.com"
+    , Gen.mapMaybe mkURI $ pure "news:comp.infosystems.www.servers.unix"
+    , Gen.mapMaybe mkURI $ pure "tel:+1-816-555-1212"
+    , Gen.mapMaybe mkURI $ pure "telnet://192.0.2.16:80/"
+    , Gen.mapMaybe mkURI $ pure "urn:oasis:names:specification:docbook:dtd:xml:4.1.2"
+    ]
+  tripping u toEncodedURI fromEncodedURI
+
+prop_expectedMime :: Property
+prop_expectedMime = withTests 1000 . property $ do
+  t <- forAll $ Gen.text (Range.linear 0 100) Gen.unicode
+  tripping t toMIME fromMIME

@@ -117,8 +117,10 @@ fromBigFloat _ = Nothing
 
 -- TODO
 -- toDecimalFrac :: Rational -> Cbor
--- toDecimalFrac = _
---
+-- toDecimalFrac (x % y) =
+--   let
+--     x' = x*y
+--     e = floor $ logBase 10 x'
 -- toBigFloat :: Rational -> Cbor
 -- toBigFloat = _
 

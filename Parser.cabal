@@ -67,4 +67,5 @@ test-suite Parser-test
         half,
         ieee754,
         containers,
-        time
+        time,
+        modern-uri
