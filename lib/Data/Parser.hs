@@ -1,21 +1,30 @@
 module Data.Parser where
 
 import           Control.Applicative
+import           Control.Monad
 import           Data.Bool
-import qualified Data.ByteString     as BS
-import           Data.Functor
-import           Data.List.NonEmpty (NonEmpty ((:|)))
+import qualified Data.ByteString      as BS
+import qualified Data.ByteString.Lazy as BSL
+import           Data.List.NonEmpty   (NonEmpty ((:|)))
 import           Data.Word
-import qualified Data.ByteString.Lazy as LBS
 
-class Alternative m => Parsing m where
+class (Alternative m) => Parsing m where
   try           :: m a -> m a
   skipMany      :: m a -> m ()
   skipSome      :: m a -> m ()
   unexpected    :: String -> m a
   eof           :: m ()
-  notFollowedBy :: Show a => m a -> m ()
+  notFollowedBy :: (Show a) => m a -> m ()
 
+
+class Cons s where
+  cons :: Word8 -> s -> s
+
+instance Cons BS.ByteString where
+  cons = BS.cons
+
+instance Cons BSL.ByteString where
+  cons = BSL.cons
 
 class Uncons s where
   uncons :: s -> Maybe (Word8, s)
@@ -23,8 +32,8 @@ class Uncons s where
 instance Uncons BS.ByteString where
   uncons = BS.uncons
 
-instance Uncons LBS.ByteString where
-  uncons = LBS.uncons
+instance Uncons BSL.ByteString where
+  uncons = BSL.uncons
 
 newtype Error = Error
   ( forall r
@@ -73,7 +82,7 @@ instance Functor (Parser s) where
 instance Applicative (Parser s) where
   pure a = Parser $ \s -> pure (s, a)
   pf <*> pa = Parser $ \s -> do
-    (s', f)  <- runParser pf s
+    (s', f) <- runParser pf s
     (s'', a) <- runParser pa s'
     pure (s'', f a)
 
@@ -114,52 +123,52 @@ instance ParserInput s => Parsing (Parser s) where
 choice :: Alternative m => [m a] -> m a
 choice = asum
 
-option :: Alternative m => a -> m a -> m a
+option :: (Alternative m) => a -> m a -> m a
 option a m = m <|> pure a
 
 skipOptional :: Alternative m => m a -> m ()
 skipOptional m = void m <|> pure ()
 
-between :: Applicative m => m bra -> m ket -> m a -> m a
+between :: (Applicative m) => m bra -> m ket -> m a -> m a
 between bra ket m = bra *> m <* ket
 
-surroundedBy :: Applicative m => m a -> m sur -> m a
+surroundedBy :: (Applicative m) => m a -> m sur -> m a
 surroundedBy m sur = sur *> m <* sur
 
-sepBy :: Alternative m => m a -> m sep -> m [a]
+sepBy :: (Alternative m) => m a -> m sep -> m [a]
 sepBy m s = go <|> pure []
   where
     go = (:) <$> m <*> many (s *> m)
 
-sepBy1 :: Alternative m => m a -> m sep -> m [a]
+sepBy1 :: (Alternative m) => m a -> m sep -> m [a]
 sepBy1 m s = (:) <$> m <*> many (s *> m)
 
-sepByNonEmpty :: Alternative m => m a -> m sep -> m (NonEmpty a)
+sepByNonEmpty :: (Alternative m) => m a -> m sep -> m (NonEmpty a)
 sepByNonEmpty m s = (:|) <$> m <*> many (s *> m)
 
-sepEndBy1 :: Alternative m => m a -> m sep -> m [a]
+sepEndBy1 :: (Alternative m) => m a -> m sep -> m [a]
 sepEndBy1 m s = (:) <$> m <*> many (s *> m) <* skipOptional s
 
-sepEndByNonEmpty :: Alternative m => m a -> m sep -> m (NonEmpty a)
+sepEndByNonEmpty :: (Alternative m) => m a -> m sep -> m (NonEmpty a)
 sepEndByNonEmpty m s = (:|) <$> m <*> many (s *> m) <* skipOptional s
 
-sepEndBy :: Alternative m => m a -> m sep -> m [a]
+sepEndBy :: (Alternative m) => m a -> m sep -> m [a]
 sepEndBy m s = sepEndBy1 m s <|> pure []
 
-endBy1 :: Alternative m => m a -> m sep -> m [a]
+endBy1 :: (Alternative m) => m a -> m sep -> m [a]
 endBy1 m s = (:) <$> m' <*> many m'
   where
     m' = m <* s
 
-endByNonEmpty :: Alternative m => m a -> m sep -> m (NonEmpty a)
+endByNonEmpty :: (Alternative m) => m a -> m sep -> m (NonEmpty a)
 endByNonEmpty m s = (:|) <$> m' <*> many m'
   where
     m' = m <* s
 
-endBy :: Alternative m => m a -> m sep -> m [a]
+endBy :: (Alternative m) => m a -> m sep -> m [a]
 endBy m s = endBy1 m s <|> pure []
 
-count :: Applicative m => Int -> m a -> m [a]
+count :: (Applicative m) => Int -> m a -> m [a]
 count n m
   | n <= 0 = pure []
   | otherwise = (:) <$> m <*> count (n - 1) m

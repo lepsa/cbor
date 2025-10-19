@@ -17,16 +17,23 @@ library
     import:           warnings
 
     exposed-modules:  Data.Cbor,
-                      Data.Cbor.Decoder,
+                      Data.Cbor.Tags,
                       Data.Cbor.Encoder,
+                      Data.Cbor.Decoder,
                       Data.Cbor.Parser,
+                      Data.Cbor.Util,
+                      Data.Cbor.Zipper,
                       Data.Parser
     build-depends:
         base,
         bytestring,
         text,
         half,
-        containers
+        containers,
+        time,
+        modern-uri,
+        base64-bytestring
+
     hs-source-dirs:   lib
     default-language: GHC2021
 
@@ -36,9 +43,17 @@ test-suite Parser-test
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Main.hs
+    other-modules:    Test.Data
+                      Test.Util
+                      Test.Roundtrip
     build-depends:
         base,
         bytestring,
         text,
         Parser,
-        hedgehog
+        hedgehog,
+        half,
+        ieee754,
+        containers,
+        time,
+        modern-uri

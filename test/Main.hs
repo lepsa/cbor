@@ -1,56 +1,85 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLists #-}
 
 module Main (main) where
 
-import qualified Data.ByteString.Builder as BSB
-import           Data.Cbor
-import           Data.Cbor.Encoder       (encode)
-import           Data.Cbor.Parser        (cbor)
-import           Data.Parser             (Parser (runParser))
-import           Hedgehog
-import qualified Hedgehog.Gen            as Gen
-import qualified Hedgehog.Range          as Range
+import Hedgehog
+import Hedgehog.Gen qualified as Gen
+import Hedgehog.Range qualified as Range
+import Data.Cbor
+import Data.Cbor.Parser
+import Data.Parser
+import Data.ByteString (ByteString, toStrict)
+import Data.Cbor.Decoder
+import Data.Cbor.Tags
+import Data.Cbor.Util
+import Test.Util
+import Test.Data
+import Test.Roundtrip
+import Data.ByteString.Builder (toLazyByteString)
+import Data.Cbor.Encoder
 
-genCbor:: Gen Cbor
-genCbor = Gen.sized $ \(Range.Size size) -> Gen.choice
-  [ CUnsigned   <$> Gen.word64      (Range.linear 0 maxBound)
-  , CNegative   <$> Gen.word64      (Range.linear 0 maxBound)
-  , CByteString <$> Gen.bytes       (Range.linear 0 size)
-  , CText       <$> Gen.text        (Range.linear 0 size) Gen.unicodeAll
-  , CArray      <$> Gen.list        (Range.linear 0 size) (halfSize genCbor)
-  , CMap        <$> Gen.map         (Range.linear 0 size) ((,) <$> halfSize genCbor <*> halfSize genCbor)
-  , CTag        <$> Gen.word64      (Range.linear 0 maxBound) <*> halfSize genCbor
-  , CSimple     <$> Gen.word8       (Range.linear 0 maxBound)
-  , CHalf       <$> Gen.realFloat   (Range.linearFrac (negate $ convertSize size) (convertSize size))
-  , CFloat      <$> Gen.realFloat   (Range.linearFrac (negate $ convertSize size) (convertSize size))
-  , CDouble     <$> Gen.realFloat   (Range.linearFrac (negate $ convertSize size) (convertSize size))
-  ]
+prop_negativeMappingBoundry :: Property
+prop_negativeMappingBoundry = property $ do
+  v <- forAll $ Gen.choice
+    [ Gen.integral $ Range.linear (-1) 1
+    , Gen.integral $ Range.linear (neg2_64 - 1) (neg2_64 + 1)
+    ]
+  if neg2_64 <= v && v <= -1
+  then toNegative v === pure (fromInteger $ abs $ v + 1)
+  else toNegative v === Nothing
   where
-    convertSize :: Fractional a => Int -> a
-    convertSize = fromRational . fromInteger . toInteger
-    halfSize = Gen.scale scaleHalf
+    neg2_64 :: Integer
+    neg2_64 = -bounds64Bit
 
-scaleHalf :: Size -> Size
-scaleHalf s = s `div` 2
+checkCBOR :: MonadTest m => Cbor -> ByteString -> m ()
+checkCBOR c s = pure c === fmap snd (runParser cbor s)
 
-prop_roundtrip :: Property
-prop_roundtrip = withTests 1000 $ property $ do
-  xs <- forAll $ Gen.resize 100 genCbor
-  let encoded = encode xs
-  case encoded of
-    Left _ -> pure ()
-    Right bs -> do
-      let lbs = BSB.toLazyByteString bs
-      annotate . show $ BSB.lazyByteStringHex lbs
-      either
-        (fail . show)
-        (\(bs', xs') -> do
-          xs === xs'
-          bs' === mempty
-        )
-        $ runParser cbor lbs
-  pure ()
+testNaNs :: MonadTest m => Cbor -> ByteString -> m ()
+testNaNs c s = case c of
+  CHalf n -> if isNaN n
+    then case fmap snd (runParser cbor s) of
+      Right (CHalf n') -> assert $ isNaN n'
+      _ -> failure
+    else checkCBOR c s
+  CFloat n -> if isNaN n
+    then case fmap snd (runParser cbor s) of
+      Right (CFloat n') -> assert $ isNaN n'
+      _ -> failure
+    else checkCBOR c s
+  CDouble n -> if isNaN n
+    then case fmap snd (runParser cbor s) of
+      Right (CDouble n') -> assert $ isNaN n'
+      _ -> failure
+    else checkCBOR c s
+  _ -> checkCBOR c s
+
+prop_rfcTestStrings :: Property
+prop_rfcTestStrings = withTests 1000 . property $ do
+  (c, s, bignum, negative) <- forAll $ Gen.choice $ pure <$> rfcTestStrings
+  annotate $ "Supplied hex: " <> show (Hex s)
+  annotate $ "Encoded hex : " <> either id (show . Hex . toStrict . toLazyByteString) (encode c)
+  testNaNs c s
+  fromBigNum c === bignum
+  case c of
+    CNegative w -> pure (fromNegative w) === negative
+    _ -> pure ()
 
 main :: IO Bool
-main = do
-  checkParallel $$discover
+main = checkParallel $
+  Group "CBOR"
+  [ ("CBOR Roundtrip", prop_roundtrip)
+  , ("Negative mapping", prop_negativeMapping)
+  , ("Negative mapping boundry", prop_negativeMappingBoundry)
+  , ("RFC test strings", prop_rfcTestStrings)
+  , ("DateTime roundtrip", prop_dateTime)
+  , ("Unix epoch roundtrip", prop_unixEpoch)
+  , ("BigNum roundtrip", prop_bigNum)
+  -- , ("BigFloat roundtrip", prop_bigFloat)
+  , ("Encoded CBOR roundtrip", prop_encodedCbor)
+  , ("Expected Base64URL encoding", prop_expectedBase64Url)
+  , ("Expected Base64 encoding", prop_expectedBase64)
+  , ("Expected Base16 encoding", prop_expectedBase16)
+  , ("Expected URI encoding", prop_encodedURI)
+  , ("Expected MIME encoding", prop_expectedMime)
+  ]

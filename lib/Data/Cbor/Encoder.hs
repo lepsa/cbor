@@ -1,4 +1,20 @@
-module Data.Cbor.Encoder (encode) where
+module Data.Cbor.Encoder
+  ( encode
+  , encodeArray
+  , encodeArrayStream
+  , encodeByteString
+  , encodeByteStringStream
+  , encodeDouble
+  , encodeFloat
+  , encodeHalf
+  , encodeMap
+  , encodeMapStream
+  , encodeNegative
+  , encodeSimple
+  , encodeTag
+  , encodeText
+  , encodeTextStream
+  ) where
 
 import           Data.Bits
 import           Data.ByteString         (ByteString)
@@ -6,6 +22,7 @@ import qualified Data.ByteString         as BS
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as BSB
 import           Data.Cbor
+import           Data.Cbor.Util
 import           Data.Coerce
 import           Data.Functor
 import           Data.Map                (Map)
@@ -18,12 +35,6 @@ import           GHC.Float               (castDoubleToWord64, castFloatToWord32,
                                           double2Float, float2Double)
 import           Numeric.Half
 import           Prelude                 hiding (encodeFloat)
-
-toInt :: (Integral a, Num b) => a -> b
-toInt = fromInteger . toInteger
-
-minorBits :: Word8
-minorBits = 0b00011111
 
 b8 :: Num a => a
 b8  = 0xFF
@@ -47,17 +58,21 @@ encodeWord64 :: Word64 -> Builder
 encodeWord64 = BSB.word64BE
 
 encode :: Cbor -> Either String Builder
-encode (CUnsigned w)   = pure $ encodeUnsigned w
-encode (CNegative w)   = pure $ encodeNegative w
-encode (CByteString s) = pure $ encodeByteString s
-encode (CText s)       = pure $ encodeText s
-encode (CHalf h)       = pure $ encodeHalf h
-encode (CFloat f)      = pure $ encodeFloat f
-encode (CDouble d)     = pure $ encodeDouble d
-encode (CSimple w)     = encodeSimple w
-encode (CArray l)      = encodeArray l
-encode (CMap m)        = encodeMap m
-encode (CTag t c)      = encodeTag t c
+encode (CUnsigned w)            = pure $ encodeUnsigned w
+encode (CNegative w)            = pure $ encodeNegative w
+encode (CByteString s)          = pure $ encodeByteString s
+encode (CByteStringStreaming s) = pure $ encodeByteStringStream s
+encode (CText s)                = pure $ encodeText s
+encode (CTextStreaming s)       = pure $ encodeTextStream s
+encode (CHalf h)                = pure $ encodeHalf h
+encode (CFloat f)               = pure $ encodeFloat f
+encode (CDouble d)              = pure $ encodeDouble d
+encode (CSimple w)              = encodeSimple w
+encode (CArray l)               = encodeArray l
+encode (CArrayStreaming l)      = encodeArrayStream l
+encode (CMap m)                 = encodeMap m
+encode (CMapStreaming m)             = encodeMapStream m
+encode (CTag t c)               = encodeTag t c
 
 encodeType :: Word8 -> Word8 -> Word8
 encodeType m s = shiftL m 5 .|. minorBits .&. s
@@ -142,3 +157,28 @@ encodeSimple w
   | w >= 32 = pure $ BSB.word8 (encodeType 7 24) <> encodeWord8 w
   | w <= 23 = pure $ BSB.word8 (encodeType 7 w)
   | otherwise = Left "Cannot encode a simple value in the range of [24..31]"
+
+encodeArrayStream :: [Cbor] -> Either String Builder
+encodeArrayStream l = go <&> \s -> BSB.word8 (encodeType majorType 31) <> s
+  where
+    majorType = 4
+    go = foldr f (pure (BSB.word8 breakByte)) l
+    f a b = (<>) <$> encode a <*> b
+
+encodeTextStream :: [Text] -> Builder
+encodeTextStream t =
+  BSB.word8 (encodeType majorType 31) <> foldr (\t' z -> encodeText t' <> z) (BSB.word8 breakByte) t
+  where
+    majorType = 3
+
+encodeByteStringStream :: [ByteString] -> Builder
+encodeByteStringStream s =
+  BSB.word8 (encodeType majorType 31) <> foldr (\s' z -> encodeByteString s' <> z) (BSB.word8 breakByte) s
+  where
+    majorType = 2
+
+encodeMapStream :: Map Cbor Cbor -> Either String Builder
+encodeMapStream m = go <&> \s -> BSB.word8 (encodeType 5 31) <> s
+  where
+    go = M.foldrWithKey f (pure $ BSB.word8 breakByte) m
+    f k v z = (\a b c -> a <> b <> c) <$> encode k <*> encode v <*> z
