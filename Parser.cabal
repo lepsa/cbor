@@ -16,8 +16,7 @@ common warnings
 library
     import:           warnings
 
-    exposed-modules:  MyLib,
-                      Data.Cbor,
+    exposed-modules:  Data.Cbor,
                       Data.Cbor.Decoder,
                       Data.Cbor.Encoder,
                       Data.Cbor.Parser,
@@ -31,18 +30,6 @@ library
     hs-source-dirs:   lib
     default-language: GHC2021
 
-executable Parser
-    import:           warnings
-    main-is:          Main.hs
-    build-depends:
-        base,
-        bytestring,
-        text,
-        half,
-        Parser
-    hs-source-dirs:   exe
-    default-language: GHC2021
-
 test-suite Parser-test
     import:           warnings
     default-language: GHC2021
@@ -53,4 +40,5 @@ test-suite Parser-test
         base,
         bytestring,
         text,
-        Parser
+        Parser,
+        hedgehog

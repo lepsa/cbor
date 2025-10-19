@@ -1,35 +1,41 @@
-module Data.Cbor.Parser where
+module Data.Cbor.Parser (cbor) where
 
-import Data.Cbor
-import Data.Parser
-import Data.Word
-import Data.Text (Text)
-import Data.Text.Encoding (decodeUtf8') 
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import Data.Map (Map)
-import qualified Data.Map as M
-import Data.Bits
-import GHC.Float
-import Control.Monad
-import Numeric.Half
-import Foreign.C.Types (CUShort (..))
+import           Control.Applicative
+import           Control.Monad
+import           Data.Bits
+import           Data.ByteString     (ByteString)
+import qualified Data.ByteString     as BS
+import           Data.Cbor
+import           Data.Either
+import           Data.Eq
+import           Data.Foldable
+import           Data.Function
+import           Data.Map            (Map)
+import qualified Data.Map            as M
+import           Data.Maybe
+import           Data.Ord
+import           Data.Parser
+import           Data.Text           (Text)
+import           Data.Text.Encoding  (decodeUtf8')
+import           Data.Word
+import           Foreign.C.Types     (CUShort (..))
+import           GHC.Float
+import           Numeric.Half
+import           Prelude             (Integral, Num, fromInteger, otherwise,
+                                      show, toInteger, uncurry, (+))
 
-reserved :: Parser a
-reserved = Parser $ \_ -> Left $ Unexpected "reserved"
+reserved :: Parser s a
+reserved = Parser $ \_ -> Left $ errorUnexpected "reserved"
 
-malformed :: Parser a
-malformed = Parser $ \_ -> Left $ Unexpected "malformed"
+malformed :: Parser s a
+malformed = Parser $ \_ -> Left $ errorUnexpected "malformed"
 
-bitError :: Parser a
-bitError = Parser $ \_ -> Left $ Unexpected "bit error"
+bitError :: Parser s a
+bitError = Parser $ \_ -> Left $ errorUnexpected "bit error"
 
 --
 -- CBOR specific parsing
 --
-
-majorBits :: Word8
-majorBits = 0b11100000
 
 minorBits :: Word8
 minorBits = 0b00011111
@@ -40,61 +46,55 @@ toInt = fromInteger . toInteger
 decodeType :: Word8 -> (Word8, Word8)
 decodeType x = (x `shiftR` 5, x .&. minorBits)
 
-packType :: (Word8, Word8) -> Word8
-packType (mt, eb) = mt' .|. eb'
-  where
-    mt' = (mt `shiftL` 5) .&. majorBits
-    eb' = eb .&. minorBits
+cbreak :: Uncons s => Parser s ()
+cbreak = void $ byte 0b111_11111
 
-cbreak :: Parser ()
-cbreak = () <$ byte 0b111_11111
-
-cbor :: Parser Cbor
+cbor :: ParserInput s => Parser s Cbor
 cbor = do
   (mt, sc) <- decodeType <$> anyByte
   case mt of
-    0 -> CUnsigned <$> cunsigned sc
-    1 -> CNegative <$> cnegative sc
-    2 -> CByteString <$> cbytestring sc
-    3 -> CText <$> ctext sc
-    4 -> CArray <$> carray sc
-    5 -> CMap <$> cmap sc
-    6 -> uncurry CTag <$> ctag sc
-    7 -> cfloating sc
-    _ -> bitError 
+    0 -> CUnsigned <$> unsigned sc
+    1 -> CNegative <$> negative sc
+    2 -> CByteString <$> bytestring sc
+    3 -> CText <$> text sc
+    4 -> CArray <$> array sc
+    5 -> CMap <$> map sc
+    6 -> uncurry CTag <$> tag sc
+    7 -> floating sc
+    _ -> bitError
 
-read8 :: Parser Word8
+read8 :: Uncons s => Parser s Word8
 read8 = anyByte
 
-read16 :: Parser Word16
+read16 :: Uncons s => Parser s Word16
 read16 = do
   b1 <- toInt <$> read8
-  b2 <- toInt <$> read8 
+  b2 <- toInt <$> read8
   pure $ shift b1 8 + b2
 
-read32 :: Parser Word32
+read32 :: Uncons s => Parser s Word32
 read32 = do
   b1 <- toInt <$> read16
   b2 <- toInt <$> read16
   pure $ shift b1 16 + b2
 
-read64 :: Parser Word64
+read64 :: Uncons s => Parser s Word64
 read64 = do
   b1 <- toInt <$> read32
   b2 <- toInt <$> read32
   pure $ shift b1 32 + b2
 
-itemLength :: Word8 -> Parser (Maybe Word64)
+itemLength :: Uncons s => Word8 -> Parser s (Maybe Word64)
 itemLength w | w <= 23 = pure . pure $ toInt w
-             | w == 24 = pure . toInt <$> read8 
+             | w == 24 = pure . toInt <$> read8
              | w == 25 = pure . toInt <$> read16
              | w == 26 = pure . toInt <$> read32
              | w == 27 = pure <$> read64
              | w <= 31 = pure Nothing
              | otherwise = bitError
 
-cunsigned :: Word8 -> Parser Word64
-cunsigned =
+unsigned :: Uncons s => Word8 -> Parser s Word64
+unsigned =
   itemLength >=>
   maybe
     malformed
@@ -103,36 +103,36 @@ cunsigned =
 -- The semantic value of this is -1 - value.
 -- To give the range [-2^64..-1]
 -- Be careful when using this
-cnegative :: Word8 -> Parser Word64
-cnegative = cunsigned
+negative :: Uncons s => Word8 -> Parser s Word64
+negative = unsigned
 
-cbytestringChunk :: Parser ByteString
-cbytestringChunk = do
+bytestringChunk :: Uncons s => Parser s ByteString
+bytestringChunk = do
   (mt, sc) <- decodeType <$> anyByte
   when (mt /= 2) malformed
   l <- itemLength sc
   case l of
-    Nothing -> malformed
+    Nothing  -> malformed
     (Just a) -> BS.pack <$> count (toInt a) anyByte
 
-cbytestring :: Word8 -> Parser ByteString
-cbytestring =
+bytestring :: ParserInput s => Word8 -> Parser s ByteString
+bytestring =
   itemLength >=>
   maybe go f
   where
     go = do
-      l <- manyTill cbytestringChunk (try cbreak)
-      pure $ foldr (<>) mempty l
+      l <- manyTill bytestringChunk (try cbreak)
+      pure $ fold l
     f l = BS.pack <$> count (toInt l) anyByte
 
-ctextChunk :: Parser Text 
-ctextChunk = do
+textChunk :: ParserInput s => Parser s Text
+textChunk = do
   (mt, sc) <- decodeType <$> anyByte
-  when( mt /= 3) malformed
+  when ( mt /= 3) malformed
   l <- itemLength sc
   case l of
     Nothing -> malformed
-    (Just a) -> 
+    (Just a) ->
       count (toInt a) anyByte >>=
       either
         (unexpected . show)
@@ -140,14 +140,14 @@ ctextChunk = do
         . decodeUtf8'
         . BS.pack
 
-ctext :: Word8 -> Parser Text
-ctext =
+text :: ParserInput s => Word8 -> Parser s Text
+text =
   itemLength >=>
   maybe go f
   where
     go = do
-      l <- manyTill ctextChunk (try cbreak)
-      pure $ foldr (<>) mempty l
+      l <- manyTill textChunk (try cbreak)
+      pure $ fold l
     f l =
       count (toInt l) anyByte >>=
       either
@@ -156,43 +156,39 @@ ctext =
         . decodeUtf8'
         . BS.pack
 
-carray :: Word8 -> Parser [Cbor]
-carray =
+array :: ParserInput s => Word8 -> Parser s [Cbor]
+array =
   itemLength >=>
   maybe go (\n -> count (toInt n) cbor)
   where
     go = manyTill cbor (try cbreak)
 
-cmap :: Word8 -> Parser (Map Cbor Cbor)
-cmap = fmap M.fromList . go
+map :: ParserInput s => Word8 -> Parser s (Map Cbor Cbor)
+map = fmap M.fromList . go
   where
     go = itemLength >=> maybe
       (manyTill pair $ try cbreak)
       (\n -> count (toInt n) pair)
     pair = (,) <$> cbor <*> cbor
 
-ctag :: Word8 -> Parser (Word64, Cbor)
-ctag = itemLength >=> maybe malformed go
+tag :: ParserInput s => Word8 -> Parser s (Word64, Cbor)
+tag = itemLength >=> maybe malformed go
   where
     go t = (t,) <$> cbor
 
-cfloating :: Word8 -> Parser Cbor
-cfloating w | w <= 19 = pure $ CSimple w
-            | w == 20 = pure CFalse
-            | w == 21 = pure CTrue
-            | w == 22 = pure CNull
-            | w == 23 = pure CUndefined
-            | w == 24 = csimple
-            | w == 25 = CHalf . Half . CUShort <$> read16 
+floating :: ParserInput s => Word8 -> Parser s Cbor
+floating w | w <= 23 = pure $ CSimple w
+            | w == 24 = simple
+            | w == 25 = CHalf . Half . CUShort <$> read16
             | w == 26 = CFloat . castWord32ToFloat <$> read32
             | w == 27 = CDouble . castWord64ToDouble <$> read64
             | w <= 30 = reserved
             | w == 31 = unexpected "break found while parsing float/simple"
             | otherwise = bitError
 
-csimple :: Parser Cbor
-csimple = anyByte >>= f
+simple :: ParserInput s => Parser s Cbor
+simple = anyByte >>= f
   where
     f b | b <= 31 = unexpected "Found simple type with an invalid value. Major type 7, additional information 24, and a value of 31 or less."
-        | otherwise = pure $ CSimple b 
+        | otherwise = pure $ CSimple b
 
