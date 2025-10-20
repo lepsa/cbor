@@ -1,9 +1,9 @@
 module Data.Cbor.Zipper where
 
-import Data.Cbor
-import Numeric.Natural
-import Data.Map qualified as M
-import Data.Map (Map)
+import           Data.Cbor
+import           Data.Map        (Map)
+import qualified Data.Map        as M
+import           Numeric.Natural
 
 data Context
   = Top

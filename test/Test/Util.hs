@@ -2,15 +2,15 @@
 
 module Test.Util where
 
-import Data.ByteString (ByteString, unpack, singleton)
-import Data.Cbor.Encoder
-import Numeric
-import qualified Data.List as L
-import Data.Maybe
-import Data.Word
-import Data.Cbor
-import Data.ByteString.Lazy (toStrict)
-import Data.ByteString.Builder (toLazyByteString)
+import           Data.ByteString         (ByteString, singleton, unpack)
+import           Data.ByteString.Builder (toLazyByteString)
+import           Data.ByteString.Lazy    (toStrict)
+import           Data.Cbor
+import           Data.Cbor.Encoder
+import qualified Data.List               as L
+import           Data.Maybe
+import           Data.Word
+import           Numeric
 -- Print out the serialised CBOR as hex so that it can be pasted into external
 -- tools to help with debugging
 newtype Hex = Hex { unHex :: ByteString }
@@ -30,6 +30,6 @@ instance Show HexCbor where
 fromHex :: String -> ByteString
 fromHex = mconcat . mapMaybe (fmap (singleton . fst . fst) . L.uncons . readHex @Word8) . pairs
   where
-    pairs [] = []
+    pairs []       = []
     pairs (a:b:s') = [a,b] : pairs s'
-    pairs _ = error "Could not read hex string"
+    pairs _        = error "Could not read hex string"

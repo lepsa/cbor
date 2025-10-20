@@ -1,5 +1,5 @@
 module Data.Cbor.Util where
-import Data.Word
+import           Data.Word
 
 majorBits :: Word8
 majorBits = 0b11100000

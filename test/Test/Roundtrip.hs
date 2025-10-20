@@ -2,21 +2,24 @@
 
 module Test.Roundtrip where
 
+import           Data.Bifunctor
+import           Data.ByteString
+import           Data.ByteString.Builder
 import           Data.Cbor
 import           Data.Cbor.Decoder
+import           Data.Cbor.Encoder
 import           Data.Cbor.Parser
 import           Data.Cbor.Tags
 import           Data.Cbor.Util
-import           Data.Parser
+import           Data.Int
+import           Data.Parser             (Error, errorUnexpected, runParser)
+import           Data.Scientific
 import           Data.Time
 import           Data.Time.Clock.System
-import Data.ByteString
-import Data.ByteString.Builder
 import           Data.Word
 import           Hedgehog
-import Data.Cbor.Encoder
-import qualified Hedgehog.Gen           as Gen
-import qualified Hedgehog.Range         as Range
+import qualified Hedgehog.Gen            as Gen
+import qualified Hedgehog.Range          as Range
 import           Test.Util
 import           Text.URI
 
@@ -54,7 +57,7 @@ prop_roundtrip = withTests 1000 . property $ do
 
 prop_negativeMapping :: Property
 prop_negativeMapping = withTests 1000 . property $ do
-  v <- forAll $ Gen.word64 $ Range.linear minBound maxBound
+  v :: Word64 <- fmap fromIntegral $ forAll $ Gen.int64 $ Range.linear 0 maxBound
   tripping v fromNegative toNegative
 
 newtype ZonedTimeEq = ZonedTimeEq {unZonedTimeEq :: ZonedTime}
@@ -81,7 +84,7 @@ prop_dateTime = withTests 1000 . property $ do
   pure ()
   where
     fromDateTime' = fromDateTime . either (Left . unZonedTimeEq) Right
-    toDateTime' = fmap (either (Left . ZonedTimeEq) Right) . toDateTime
+    toDateTime' = withDateTime (pure . either (Left . ZonedTimeEq) Right)
 
 newtype UTCTimeEpsilon = UTCTimeEpsilon
   { unUTCTimeEp :: UTCTime
@@ -104,14 +107,12 @@ prop_unixEpoch = withTests 1000 . property $ do
     ]
   let difftime = either fromIntegral realToFrac d
       time = UTCTimeEpsilon $ addUTCTime difftime epoch
-  tripping (pure time) fromUnixEpoch' toUnixEpoch'
+  tripping time fromUnixEpoch' toUnixEpoch'
   where
-    fromUnixEpoch' :: Maybe UTCTimeEpsilon -> Maybe Cbor
-    fromUnixEpoch' Nothing  = Nothing
-    fromUnixEpoch' (Just t) = fromUnixEpoch $ unUTCTimeEp t
-    toUnixEpoch' :: Maybe Cbor -> Maybe (Maybe UTCTimeEpsilon)
-    toUnixEpoch' Nothing  = Nothing
-    toUnixEpoch' (Just c) = pure $ UTCTimeEpsilon <$> toUnixEpoch c
+    fromUnixEpoch' :: UTCTimeEpsilon -> Cbor
+    fromUnixEpoch' = fromUnixEpoch . unUTCTimeEp
+    toUnixEpoch' :: Cbor -> Decoded UTCTimeEpsilon
+    toUnixEpoch' = withUnixEpoch (pure . UTCTimeEpsilon)
 
 prop_bigNum :: Property
 prop_bigNum = withTests 1000 . property $ do
@@ -119,46 +120,81 @@ prop_bigNum = withTests 1000 . property $ do
     [ Gen.integral $ Range.linear bounds64Bit (bounds64Bit*2)
     , Gen.integral $ Range.linear (negate $ bounds64Bit*2) (negate bounds64Bit - 1)
     ]
-  tripping (pure n) toBigNum' fromBigNum'
+  tripping n toBigNum' fromBigNum'
   where
-    toBigNum' :: Maybe Integer -> Maybe HexCbor
-    toBigNum' Nothing  = Nothing
-    toBigNum' (Just n) = HexCbor <$> toBigNum n
-    fromBigNum' :: Maybe HexCbor -> Maybe (Maybe Integer)
-    fromBigNum' Nothing  = Nothing
-    fromBigNum' (Just n) = pure $ fromBigNum $ unHexCbor n
+    toBigNum' :: Integer -> HexCbor
+    toBigNum' = HexCbor . toBigNum
+    fromBigNum' :: HexCbor -> Decoded Integer
+    fromBigNum' = withBigNum pure . unHexCbor
 
--- TODO
--- prop_bigFrac :: Property
--- prop_bigFrac = withTests 1000 . property $ do
---   r <- forAll $ Gen.integral $ Range.linear _ _
+prop_bigFrac :: Property
+prop_bigFrac = withTests 1000 . property $ do
+  m :: Integer <- forAll $ Gen.integral $ Range.linear (-10) 10
+  e :: Int64 <- forAll $ Gen.integral $ Range.linear (-10) 10
+  tripping (m, e) toDecimalFrac' fromDecimalFrac'
+  where
+    toDecimalFrac' :: (Integer, Int64) -> HexCbor
+    toDecimalFrac' (m, e) = HexCbor $ toDecimalFrac m e
+    fromDecimalFrac' :: HexCbor -> Maybe (Integer, Int64)
+    fromDecimalFrac' (HexCbor (CTag 4 (CArray [e, m]))) = do
+      e' <- either (const Nothing) pure $ withIntegral pure e
+      m' <- either (const Nothing) pure $ withIntegral (pure . fromIntegral) m
+      pure (m', e')
+    fromDecimalFrac' _ = Nothing
+
+prop_bigFracValues :: Property
+prop_bigFracValues = withTests 1000 . property $ do
+  m <- forAll $ Gen.integral $ Range.linear (-1000) 1000
+  e <- forAll $ Gen.int64 $ Range.linear (-1000) 1000
+  r <- evalEither $ withDecimalFrac pure $ toDecimalFrac m e
+  unsafeFromRational r === Data.Scientific.scientific m (fromIntegral e)
+
+prop_bigFloat :: Property
+prop_bigFloat = withTests 1000 . property $ do
+  m :: Integer <- forAll $ Gen.integral $ Range.linear (-10) 10
+  e :: Int64 <- forAll $ Gen.integral $ Range.linear (-10) 10
+  tripping (m, e) toBigFloat' fromBigFloat'
+  where
+    toBigFloat' :: (Integer, Int64) -> HexCbor
+    toBigFloat' (m, e) = HexCbor $ toBigFloat m e
+    fromBigFloat' :: HexCbor -> Maybe (Integer, Int64)
+    fromBigFloat' (HexCbor (CTag 5 (CArray [e, m]))) = do
+      e' <- either (const Nothing) pure $ withIntegral pure e
+      m' <- either (const Nothing) pure $ withIntegral (pure . fromIntegral) m
+      pure (m', e')
+    fromBigFloat' _ = Nothing
+
+prop_bigFloatValues :: Property
+prop_bigFloatValues = withTests 1000 . property $ do
+  m <- forAll $ Gen.integral $ Range.linear 0 100
+  e <- forAll $ Gen.int64 $ Range.linear (-100) 100
+  r <- evalEither $ withBigFloat pure $ toBigFloat m e
+  r === (fromIntegral m * 2 ^^ e)
 
 prop_encodedCbor :: Property
 prop_encodedCbor = withTests 1000 . property $ do
   c <- CTag 24 <$> forAll genCbor
-  tripping (pure c) toEncodedCbor' fromEncodedCbor'
+  tripping c toEncodedCbor' fromEncodedCbor'
   where
-    toEncodedCbor' :: Maybe Cbor -> Maybe HexCbor
-    toEncodedCbor' Nothing  = Nothing
-    toEncodedCbor' (Just c) = HexCbor <$> toEncodedCbor c
-    fromEncodedCbor' :: Maybe HexCbor -> Maybe (Maybe Cbor)
-    fromEncodedCbor' Nothing  = Nothing
-    fromEncodedCbor' (Just c) = pure $ fromEncodedCbor $ unHexCbor c
+    toEncodedCbor' :: Cbor -> Either DecodeError HexCbor
+    toEncodedCbor' = bimap Error HexCbor . toEncodedCbor
+    fromEncodedCbor' :: Either DecodeError HexCbor -> Decoded Cbor
+    fromEncodedCbor' e = e >>= withEncodedCbor pure . unHexCbor
 
 prop_expectedBase64Url :: Property
 prop_expectedBase64Url = withTests 1000 . property $ do
   c <- CTag 21 <$> forAll genCbor
-  tripping c toExpectedBase64Url fromExpectedBase64Url
+  tripping c toExpectedBase64Url $ withExpectedBase64Url pure
 
 prop_expectedBase64 :: Property
 prop_expectedBase64 = withTests 1000 . property $ do
   c <- CTag 22 <$> forAll genCbor
-  tripping c toExpectedBase64 fromExpectedBase64
+  tripping c toExpectedBase64 $ withExpectedBase64 pure
 
 prop_expectedBase16 :: Property
 prop_expectedBase16 = withTests 1000 . property $ do
   c <- CTag 23 <$> forAll genCbor
-  tripping c toExpectedBase16 fromExpectedBase16
+  tripping c toExpectedBase16 $ withExpectedBase16 pure
 
 prop_encodedURI :: Property
 prop_encodedURI = withTests 1000 . property $ do
@@ -172,9 +208,14 @@ prop_encodedURI = withTests 1000 . property $ do
     , Gen.mapMaybe mkURI $ pure "telnet://192.0.2.16:80/"
     , Gen.mapMaybe mkURI $ pure "urn:oasis:names:specification:docbook:dtd:xml:4.1.2"
     ]
-  tripping u toEncodedURI fromEncodedURI
+  tripping u toEncodedURI (withEncodedURI pure)
 
 prop_expectedMime :: Property
 prop_expectedMime = withTests 1000 . property $ do
   t <- forAll $ Gen.text (Range.linear 0 100) Gen.unicode
-  tripping t toMIME fromMIME
+  tripping t toMIME (withMIME pure)
+
+prop_expectedMimeByteString :: Property
+prop_expectedMimeByteString = withTests 1000 . property $ do
+  t <- forAll $ Gen.bytes (Range.linear 0 100)
+  tripping t toMIMEByteString (withMIMEByteString pure)

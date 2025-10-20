@@ -1,16 +1,16 @@
+{-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedLists #-}
 
 module Test.Data where
 
-import Data.Cbor
-import Data.ByteString (ByteString)
-import Data.ByteString.Lazy (toStrict)
-import Data.ByteString.Builder
-import qualified Numeric.IEEE as IEEE
-import Numeric.Half
-import Data.Cbor.Encoder
-import Test.Util
+import           Data.ByteString         (ByteString)
+import           Data.ByteString.Builder
+import           Data.ByteString.Lazy    (toStrict)
+import           Data.Cbor
+import           Data.Cbor.Encoder
+import           Numeric.Half
+import qualified Numeric.IEEE            as IEEE
+import           Test.Util
 
 
 -- Test values from RFC8949, Appendix A

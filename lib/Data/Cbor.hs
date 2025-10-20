@@ -1,6 +1,8 @@
 module Data.Cbor where
 
 import           Data.ByteString
+import           Data.Cbor.Util
+import           Data.Int
 import           Data.Map
 import qualified Data.Map.Lazy   as ML
 import           Data.Text
@@ -31,6 +33,16 @@ cUnsigned = CUnsigned
 
 cNegative :: Word64 -> Cbor
 cNegative = CNegative
+
+toNegative :: Int64 -> Maybe Word64
+toNegative i | i <= -1 && fromIntegral i >= -bounds64Bit = pure $ fromIntegral $ abs $ i + 1
+             | otherwise = Nothing
+
+cInteger :: Int64 -> Cbor
+cInteger i = maybe
+  (cUnsigned $ fromIntegral i)
+  cNegative
+  $ toNegative i
 
 cBytestring :: ByteString -> Cbor
 cBytestring = CByteString
@@ -111,24 +123,24 @@ instance Ord Cbor where
   (CMapStreaming a)        <= (CMapStreaming b)        = a <= b
   (CTag a b)               <= (CTag c d)               = if a == c then b <= d else a <= c
   (CSimple a)              <= (CSimple b)              = a <= b
-  
+
   (CHalf a)                <= (CHalf b)                = a <= b
   (CHalf a)                <= (CFloat b)               = fromHalf a <= b
   (CHalf a)                <= (CDouble b)              = float2Double (fromHalf a) <= b
-  
+
   (CFloat a)               <= (CFloat b)               = a <= b
   (CFloat a)               <= (CHalf b)                = a <= fromHalf b
   (CFloat a)               <= (CDouble b)              = float2Double a <= b
-  
+
   (CDouble a)              <= (CDouble b)              = a <= b
   (CDouble a)              <= (CHalf b)                = a <= float2Double (fromHalf b)
   (CDouble a)              <= (CFloat b)               = a <= float2Double b
-  
+
   (CUnsigned _) <= _ = True
-  
+
   (CNegative _) <= (CUnsigned _) = False
   (CNegative _) <= _ = True
-  
+
   (CByteString _) <= (CUnsigned _) = False
   (CByteString _) <= (CNegative _) = False
   (CByteString _) <= _ = True

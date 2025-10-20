@@ -10,6 +10,7 @@ module Data.Cbor.Encoder
   , encodeMap
   , encodeMapStream
   , encodeNegative
+  , encodeUnsigned
   , encodeSimple
   , encodeTag
   , encodeText
@@ -71,7 +72,7 @@ encode (CSimple w)              = encodeSimple w
 encode (CArray l)               = encodeArray l
 encode (CArrayStreaming l)      = encodeArrayStream l
 encode (CMap m)                 = encodeMap m
-encode (CMapStreaming m)             = encodeMapStream m
+encode (CMapStreaming m)        = encodeMapStream m
 encode (CTag t c)               = encodeTag t c
 
 encodeType :: Word8 -> Word8 -> Word8

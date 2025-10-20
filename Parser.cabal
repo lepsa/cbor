@@ -56,4 +56,5 @@ test-suite Parser-test
         ieee754,
         containers,
         time,
-        modern-uri
+        modern-uri,
+        scientific
