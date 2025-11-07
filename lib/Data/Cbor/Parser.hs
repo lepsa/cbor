@@ -150,7 +150,7 @@ array = itemLength >=> maybe go (\n -> Right <$> count (toInt n) cbor)
   where
     go = Left <$> manyTill cbor (try cbreak)
 
-map :: ParserInput s => Word8 -> Parser s (Either (M.Map Cbor Cbor) (Map Cbor Cbor))
+map :: ParserInput s => Word8 -> Parser s (Either (ML.Map Cbor Cbor) (Map Cbor Cbor))
 map = go
   where
     go =

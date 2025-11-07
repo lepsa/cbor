@@ -2,7 +2,6 @@
 
 module Test.Roundtrip where
 
-import           Data.Bifunctor
 import           Data.ByteString
 import           Data.ByteString.Builder
 import           Data.Cbor
@@ -173,13 +172,13 @@ prop_bigFloatValues = withTests 1000 . property $ do
 
 prop_encodedCbor :: Property
 prop_encodedCbor = withTests 1000 . property $ do
-  c <- CTag 24 <$> forAll genCbor
-  tripping c toEncodedCbor' fromEncodedCbor'
+  c <- forAll genCbor >>= (evalEither . encode) . CTag 24
+  tripping (toStrict $ toLazyByteString c) toEncodedCbor' fromEncodedCbor'
   where
-    toEncodedCbor' :: Cbor -> Either DecodeError HexCbor
-    toEncodedCbor' = bimap Error HexCbor . toEncodedCbor
-    fromEncodedCbor' :: Either DecodeError HexCbor -> Decoded Cbor
-    fromEncodedCbor' e = e >>= withEncodedCbor pure . unHexCbor
+    toEncodedCbor' :: ByteString ->  HexCbor
+    toEncodedCbor' = HexCbor . toEncodedCbor
+    fromEncodedCbor' :: HexCbor -> Decoded ByteString
+    fromEncodedCbor' = withEncodedCbor pure . unHexCbor
 
 prop_expectedBase64Url :: Property
 prop_expectedBase64Url = withTests 1000 . property $ do

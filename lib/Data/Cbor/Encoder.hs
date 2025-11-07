@@ -36,6 +36,7 @@ import           GHC.Float               (castDoubleToWord64, castFloatToWord32,
                                           double2Float, float2Double)
 import           Numeric.Half
 import           Prelude                 hiding (encodeFloat)
+import qualified Data.Map.Lazy as ML
 
 b8 :: Num a => a
 b8  = 0xFF
@@ -178,7 +179,7 @@ encodeByteStringStream s =
   where
     majorType = 2
 
-encodeMapStream :: Map Cbor Cbor -> Either String Builder
+encodeMapStream :: ML.Map Cbor Cbor -> Either String Builder
 encodeMapStream m = go <&> \s -> BSB.word8 (encodeType 5 31) <> s
   where
     go = M.foldrWithKey f (pure $ BSB.word8 breakByte) m

@@ -6,15 +6,11 @@ import           Data.ByteString
 import qualified Data.ByteString            as B
 import qualified Data.ByteString.Base64     as B64
 import qualified Data.ByteString.Base64.URL as B64U
-import           Data.ByteString.Builder    (toLazyByteString)
 import           Data.Cbor
 import           Data.Cbor.Decoder
-import           Data.Cbor.Encoder
-import           Data.Cbor.Parser
 import           Data.Cbor.Util
 import           Data.Foldable
 import           Data.Int
-import           Data.Parser                (runParser)
 import           Data.Ratio
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T
@@ -127,15 +123,13 @@ toBigFloat m e = CTag 5 (CArray [cInteger e, toBigNum m])
 -- Section 3.4.5 Content Hints
 
 -- Encoded CBOR
-withEncodedCbor :: Decoder Cbor a
+withEncodedCbor :: Decoder ByteString a
 withEncodedCbor f = withTagValue 24 decodeTag
   where
-  decodeTag c' =
-    let g = either (Left . Error . show) (f . snd) . runParser cbor
-    in withByteString g c' <> withByteStringStreaming (g . fold) c'
+  decodeTag c' = withByteString f c' <> withByteStringStreaming (f . fold) c'
 
-toEncodedCbor :: Cbor -> Either String Cbor
-toEncodedCbor c = CTag 24 . CByteString . toStrict . toLazyByteString <$> encode c
+toEncodedCbor :: ByteString -> Cbor
+toEncodedCbor = CTag 24 . CByteString
 
 -- Expected later encodings
 withExpectedBase64Url :: Decoder Cbor a
