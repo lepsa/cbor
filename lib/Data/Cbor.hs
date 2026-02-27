@@ -1,5 +1,7 @@
+{-# LANGUAGE LambdaCase #-}
 module Data.Cbor where
 
+import           Control.Lens
 import           Data.ByteString
 import           Data.Cbor.Util
 import           Data.Int
@@ -27,6 +29,81 @@ data Cbor
   | CFloat Float
   | CDouble Double
   deriving (Show)
+
+_CUnsigned :: Prism' Cbor Word64
+_CUnsigned = prism CUnsigned $ \case
+  CUnsigned w -> pure w
+  c           -> Left c
+
+_CNegative :: Prism' Cbor Word64
+_CNegative = prism CNegative $ \case
+  CNegative w -> pure w
+  c           -> Left c
+
+_CByteString :: Prism' Cbor ByteString
+_CByteString = prism CByteString $ \case
+  CByteString b -> pure b
+  c             -> Left c
+
+_CByteStringStreaming :: Prism' Cbor [ByteString]
+_CByteStringStreaming = prism CByteStringStreaming $ \case
+  CByteStringStreaming l -> pure l
+  c                      -> Left c
+
+_CText :: Prism' Cbor Text
+_CText = prism CText $ \case
+  CText t -> pure t
+  c       -> Left c
+
+_CTextStreaming :: Prism' Cbor [Text]
+_CTextStreaming = prism CTextStreaming $ \case
+  CTextStreaming l -> pure l
+  c                -> Left c
+
+_CArray :: Prism' Cbor [Cbor]
+_CArray = prism CArray $ \case
+  CArray l -> pure l
+  c        -> Left c
+
+_CArrayStreaming :: Prism' Cbor [Cbor]
+_CArrayStreaming = prism CArrayStreaming $ \case
+  CArrayStreaming l -> pure l
+  c                 -> Left c
+
+_CMap :: Prism' Cbor (Map Cbor Cbor)
+_CMap = prism CMap $ \case
+  CMap m -> pure m
+  c      -> Left c
+
+_CMapStreaming :: Prism' Cbor (ML.Map Cbor Cbor)
+_CMapStreaming = prism CMap $ \case
+  CMap m -> pure m
+  c      -> Left c
+
+_CTag :: Prism' Cbor (Word64, Cbor)
+_CTag = prism (uncurry CTag) $ \case
+  CTag t c' -> pure (t, c')
+  c         -> Left c
+
+_CSimple :: Prism' Cbor Word8
+_CSimple = prism CSimple $ \case
+  CSimple w -> pure w
+  c         -> Left c
+
+_CHalf :: Prism' Cbor Half
+_CHalf = prism CHalf $ \case
+  CHalf h -> pure h
+  c       -> Left c
+
+_CFloat :: Prism' Cbor Float
+_CFloat = prism CFloat $ \case
+  CFloat f -> pure f
+  c        -> Left c
+
+_CDouble :: Prism' Cbor Double
+_CDouble = prism CDouble $ \case
+  CDouble d -> pure d
+  c         -> Left c
 
 cUnsigned :: Word64 -> Cbor
 cUnsigned = CUnsigned

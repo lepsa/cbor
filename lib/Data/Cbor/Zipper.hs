@@ -1,18 +1,51 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Data.Cbor.Zipper where
 
+import           Control.Lens    hiding (Context)
 import           Data.Cbor
 import           Data.Map        (Map)
 import qualified Data.Map        as M
 import           Numeric.Natural
 
 data Context
+  -- Top of the document
   = Top
+  -- Key, Map. Value comes from the `Location` type used when rebuilding
   | Member Cbor (Map Cbor Cbor) Context
+  -- Left side of the list, reverse order. Right side of the list, in order.
   | Entry [Cbor] [Cbor] Context
   deriving Show
 
+_Top :: Prism' Context ()
+_Top = prism (const Top) $ \case
+  Top -> pure ()
+  c -> Left c
+
+_Member :: Prism' Context (Cbor, Map Cbor Cbor, Context)
+_Member = prism (\(c, m, cx) -> Member c m cx) $ \case
+  Member c m cx -> pure (c, m, cx)
+  c -> Left c
+
+_Entry :: Prism' Context ([Cbor], [Cbor], Context)
+_Entry = prism (\(l, r, c) -> Entry l r c) $ \case
+  Entry l r c -> pure (l, r, c)
+  c -> Left c
+
 data Location = Location Cbor Context
   deriving Show
+
+locationCbor :: Lens' Location Cbor
+locationCbor = lens f g
+  where
+    f (Location c _) = c
+    g (Location _ cx) c = Location c cx
+
+locationContext :: Lens' Location Context
+locationContext = lens f g
+  where
+    f (Location _ cx) = cx
+    g (Location c _) = Location c
 
 anchor :: Cbor -> Location
 anchor v = Location v Top

@@ -23,7 +23,8 @@ library
                       Data.Cbor.Parser,
                       Data.Cbor.Util,
                       Data.Cbor.Zipper,
-                      Data.Parser
+                      Data.Parser,
+                      Data.Lambda
     build-depends:
         base,
         bytestring,
@@ -32,7 +33,10 @@ library
         containers,
         time,
         modern-uri,
-        base64-bytestring
+        base64-bytestring,
+        lens,
+        trifecta,
+        parsers
 
     hs-source-dirs:   lib
     default-language: GHC2021

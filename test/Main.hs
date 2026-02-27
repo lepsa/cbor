@@ -32,8 +32,8 @@ prop_negativeMappingBoundry = property $ do
   where
     neg2_64 = -bounds64Bit
 
-checkCBOR :: MonadTest m => Cbor -> ByteString -> m ()
-checkCBOR c s = pure c === fmap snd (runParser cbor s)
+checkOtherCBOR :: MonadTest m => Cbor -> ByteString -> m ()
+checkOtherCBOR c s = pure c === fmap snd (runParser cbor s)
 
 testNaNs :: MonadTest m => Cbor -> ByteString -> m ()
 testNaNs c s = case c of
@@ -41,25 +41,35 @@ testNaNs c s = case c of
     then case fmap snd (runParser cbor s) of
       Right (CHalf n') -> assert $ isNaN n'
       _                -> failure
-    else checkCBOR c s
+    else checkOtherCBOR c s
   CFloat n -> if isNaN n
     then case fmap snd (runParser cbor s) of
       Right (CFloat n') -> assert $ isNaN n'
       _                 -> failure
-    else checkCBOR c s
+    else checkOtherCBOR c s
   CDouble n -> if isNaN n
     then case fmap snd (runParser cbor s) of
       Right (CDouble n') -> assert $ isNaN n'
       _                  -> failure
-    else checkCBOR c s
-  _ -> checkCBOR c s
+    else checkOtherCBOR c s
+  _ -> checkOtherCBOR c s
+
+checkCBOR :: MonadTest m => Cbor -> ByteString -> m ()
+checkCBOR = testNaNs
 
 prop_rfcTestStrings :: Property
 prop_rfcTestStrings = withTests 1000 . property $ do
-  (c, s, bignum, negative) <- forAll $ Gen.choice $ pure <$> rfcTestStrings
+  (c, s) <- forAll $ Gen.choice $ pure <$> rfcTestStrings
   annotate $ "Supplied hex: " <> show (Hex s)
   annotate $ "Encoded hex : " <> either id (show . Hex . toStrict . toLazyByteString) (encode c)
-  testNaNs c s
+  checkCBOR c s
+
+prop_rfcTestStringsBigNum :: Property
+prop_rfcTestStringsBigNum = withTests 1000 . property $ do
+  (c, s, bignum, negative) <- forAll $ Gen.choice $ pure <$> rfcTestStringsBigNum
+  annotate $ "Supplied hex: " <> show (Hex s)
+  annotate $ "Encoded hex : " <> either id (show . Hex . toStrict . toLazyByteString) (encode c)
+  checkCBOR c s
   bignum === either (const Nothing) pure (withBigNum pure c)
   case c of
     CNegative w -> pure (fromNegative w) === fmap fromIntegral negative
@@ -72,6 +82,7 @@ main = checkParallel $
   , ("Negative mapping", prop_negativeMapping)
   , ("Negative mapping boundry", prop_negativeMappingBoundry)
   , ("RFC test strings", prop_rfcTestStrings)
+  , ("RFC test strings bignum", prop_rfcTestStringsBigNum)
   , ("DateTime roundtrip", prop_dateTime)
   , ("Unix epoch roundtrip", prop_unixEpoch)
   , ("BigNum roundtrip", prop_bigNum)

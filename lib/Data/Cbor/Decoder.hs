@@ -4,7 +4,6 @@ module Data.Cbor.Decoder where
 
 import           Data.ByteString
 import           Data.Cbor
-import           Data.Int
 import           Data.Map
 import qualified Data.Map        as M
 import qualified Data.Map.Lazy   as ML
@@ -35,7 +34,13 @@ withNegative :: Decoder Word64 a
 withNegative f (CNegative a) = f a
 withNegative _ a             = Left $ UnexpectedValue "Expected Negative" a
 
-withIntegral :: Decoder Int64 a
+-- Integer is used here as the negative value can underflow Int64
+withNegative' :: Decoder Integer a
+withNegative' f (CNegative a) = f $ fromNegative a
+withNegative' _ a             = Left $ UnexpectedValue "Expected Negative" a
+
+-- Integer is used here as the negative value can underflow Int64
+withIntegral :: Decoder Integer a
 withIntegral f (CUnsigned a) = f $ fromIntegral a
 withIntegral f (CNegative a) = f $ fromNegative a
 withIntegral _ a = Left $ UnexpectedValue "Expected Unsigned or Negative" a
@@ -64,11 +69,11 @@ withArrayStreaming :: Decoder [Cbor] a
 withArrayStreaming f (CArrayStreaming a) = f a
 withArrayStreaming _ a = Left $ UnexpectedValue "Expected Streaming Array" a
 
-withMap :: Decoder (Map Cbor Cbor) af
+withMap :: Decoder (Map Cbor Cbor) a
 withMap f (CMap a) = f a
 withMap _ a        = Left $ UnexpectedValue "Expected Map" a
 
-withMapStreaming :: Decoder (ML.Map Cbor Cbor) af
+withMapStreaming :: Decoder (ML.Map Cbor Cbor) a
 withMapStreaming f (CMapStreaming a) = f a
 withMapStreaming _ a                 = Left $ UnexpectedValue "Expected Map" a
 
@@ -133,5 +138,5 @@ m .:? k = pure $ M.lookup k m
 -- Mapping to and from the Word64 that represents the CBOR encoding of the negative value.
 -- With BigNums we can always go from the Word64 to an Integer, but going from Integer to Word64 may
 -- fail if the value isn't negative, or is outside of the expected bounds.
-fromNegative :: Word64 -> Int64
+fromNegative :: Word64 -> Integer
 fromNegative w = negate (fromIntegral w) - 1
